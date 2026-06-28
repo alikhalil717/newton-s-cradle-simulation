@@ -1,0 +1,21 @@
+{
+  "name": "threejs",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "lil-gui": "^0.21.0",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.21"
+  }
+}
