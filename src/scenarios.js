@@ -43,16 +43,17 @@ export class ScenarioManager {
     }
 
     /**
-     * Helper: create a chain of N balls with given parameters
-     * Accepts both 'radius'/'length' (state naming) and 'R'/'L' (internal naming)
+     * Helper: create a chain of N balls with given parameters.
+     * Now supports per-ball arrays and stringAngle (two-string cradle).
      */
     createChain(N, ballParams = {}) {
         const R = ballParams.radius ?? ballParams.R ?? 0.0125;
         const L = ballParams.L ?? ballParams.length ?? 0.30;
         const mass = ballParams.mass ?? 0.065;
         const gap = ballParams.gap ?? 0;
+        const stringAngle = ballParams.stringAngle ?? 0;
         const balls = [];
-        const spacing = 2 * R + gap;
+        const spacing = 2 * (Array.isArray(R) ? Math.max(...R) : R) + gap;
 
         for (let i = 0; i < N; i++) {
             const pivot = new THREE.Vector3(
@@ -63,9 +64,10 @@ export class ScenarioManager {
             const ball = new Ball({
                 index: i,
                 pivot,
-                mass: Array.isArray(mass) ? mass[i] || mass[0] : mass,
-                radius: Array.isArray(R) ? R[i] || R[0] : R,
-                length: Array.isArray(L) ? L[i] || L[0] : L,
+                mass: Array.isArray(mass) ? (mass[i] ?? mass[mass.length - 1]) : mass,
+                radius: Array.isArray(R) ? (R[i] ?? R[R.length - 1]) : R,
+                length: Array.isArray(L) ? (L[i] ?? L[L.length - 1]) : L,
+                stringAngle,
             });
             balls.push(ball);
         }

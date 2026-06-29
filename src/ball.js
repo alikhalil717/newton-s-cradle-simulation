@@ -23,15 +23,21 @@ export class Ball {
      * @param {number} params.radius - Ball radius (m)
      * @param {number} params.length - String length (m)
      */
-    constructor({ index, pivot, mass = 0.065, radius = 0.0125, length = 0.30 }) {
+    constructor({ index, pivot, mass = 0.065, radius = 0.0125, length = 0.30, stringAngle = 0 }) {
         this.index = index;
         this.pivot = pivot.clone();
         this.mass = mass;
         this.radius = radius;
-        this.length = length;
+        this.length = length;           // physical string length (each of the two strings)
+        this.stringAngle = stringAngle; // angle between the two strings (degrees)
 
-        // Cartesian state (relative to pivot)
-        this.pos = new THREE.Vector3(0, -length, 0); // hanging straight down
+        // Two-string derived geometry
+        this.effectiveLength = length;  // effective pendulum length L_eff = L * cos(α/2)
+        this.stringHalfSpread = 0;      // half the top separation d = L * sin(α/2)
+        this.updateEffectiveLength();
+
+        // Cartesian state (relative to pivot — midpoint of the two string anchors)
+        this.pos = new THREE.Vector3(0, -this.effectiveLength, 0);
         this.vel = new THREE.Vector3(0, 0, 0);
         this.acc = new THREE.Vector3(0, 0, 0);
 
@@ -39,16 +45,29 @@ export class Ball {
         this.force = new THREE.Vector3(0, 0, 0);
 
         // Contact state
-        this.inContact = new Set(); // indices of balls currently touching this one
+        this.inContact = new Set();
 
         // Three.js visuals (created by createMesh / createString)
         this.mesh = null;
-        this.stringLine = null;
+        this.strings = [null, null];               // two Line objects for the two strings
+        this.stringPivots = [new THREE.Vector3(), new THREE.Vector3()];
     }
 
-    /** World-space position = pivot + local pos */
+    /** Recompute effective length and half-spread from string length and angle */
+    updateEffectiveLength() {
+        const halfAngleRad = THREE.MathUtils.degToRad(this.stringAngle / 2);
+        this.effectiveLength = this.length * Math.cos(halfAngleRad);
+        this.stringHalfSpread = this.length * Math.sin(halfAngleRad);
+    }
+
+    /** World-space position = pivot center + local pos */
     get worldPos() {
         return new THREE.Vector3().copy(this.pivot).add(this.pos);
+    }
+
+    /** Full string length (each of the two strings), considering spread */
+    get actualStringLength() {
+        return this.length;
     }
 
     /** Speed magnitude (m/s) */
@@ -63,15 +82,15 @@ export class Ball {
 
     /** Potential energy relative to lowest point (J) */
     getPotentialEnergy(g) {
-        // Lowest point is at y = -length below pivot
-        const lowestY = this.pivot.y - this.length;
+        // Lowest point is at y = -effectiveLength below pivot
+        const lowestY = this.pivot.y - this.effectiveLength;
         const currentY = this.pivot.y + this.pos.y;
         return this.mass * g * (currentY - lowestY);
     }
 
     /** Reset to hanging straight down with zero velocity */
     reset() {
-        this.pos.set(0, -this.length, 0);
+        this.pos.set(0, -this.effectiveLength, 0);
         this.vel.set(0, 0, 0);
         this.acc.set(0, 0, 0);
         this.force.set(0, 0, 0);
@@ -80,23 +99,24 @@ export class Ball {
 
     /** Set initial angular state (θ, φ) with optional angular velocities */
     setAngularState(theta, phi, thetaDot = 0, phiDot = 0) {
+        const L = this.effectiveLength;
         // Position from spherical coords
-        this.pos.x = this.length * Math.sin(theta) * Math.cos(phi);
-        this.pos.y = -this.length * Math.cos(theta);
-        this.pos.z = this.length * Math.sin(theta) * Math.sin(phi);
+        this.pos.x = L * Math.sin(theta) * Math.cos(phi);
+        this.pos.y = -L * Math.cos(theta);
+        this.pos.z = L * Math.sin(theta) * Math.sin(phi);
 
         // Velocity from angular velocities (tangent basis)
         // θ̂ direction: d/dθ of position
         const eTheta = new THREE.Vector3(
-            this.length * Math.cos(theta) * Math.cos(phi),
-            this.length * Math.sin(theta),
-            this.length * Math.cos(theta) * Math.sin(phi)
+            L * Math.cos(theta) * Math.cos(phi),
+            L * Math.sin(theta),
+            L * Math.cos(theta) * Math.sin(phi)
         );
         // φ̂ direction: d/dφ of position
         const ePhi = new THREE.Vector3(
-            -this.length * Math.sin(theta) * Math.sin(phi),
+            -L * Math.sin(theta) * Math.sin(phi),
             0,
-            this.length * Math.sin(theta) * Math.cos(phi)
+            L * Math.sin(theta) * Math.cos(phi)
         );
 
         this.vel.copy(eTheta.multiplyScalar(thetaDot).add(ePhi.multiplyScalar(phiDot)));
@@ -127,39 +147,54 @@ export class Ball {
     }
 
     /**
-     * Create the string line from pivot to ball
+     * Update string pivot positions based on current stringHalfSpread.
+     * The pivots are at Z = ±stringHalfSpread from the ball's pivot center.
+     */
+    updateStringPivots() {
+        const d = this.stringHalfSpread;
+        const pm = this.pivot;
+        this.stringPivots[0].set(pm.x, pm.y, pm.z - d);
+        this.stringPivots[1].set(pm.x, pm.y, pm.z + d);
+    }
+
+    /**
+     * Create two string lines from the two pivot points to the ball.
+     * When stringAngle = 0 they overlap (single-string behavior).
      * @param {THREE.Scene} scene
-     * @returns {THREE.Line}
      */
     createString(scene) {
-        const points = [
-            this.pivot.clone(),
-            this.worldPos.clone(),
-        ];
-        const geo = new THREE.BufferGeometry().setFromPoints(points);
+        this.updateStringPivots();
+
+        const wp = this.worldPos;
         const mat = new THREE.LineBasicMaterial({
             color: 0x888888,
             transparent: true,
             opacity: 0.6,
         });
-        this.stringLine = new THREE.Line(geo, mat);
-        scene.add(this.stringLine);
-        return this.stringLine;
+
+        for (let i = 0; i < 2; i++) {
+            const pts = [this.stringPivots[i].clone(), wp.clone()];
+            const geo = new THREE.BufferGeometry().setFromPoints(pts);
+            this.strings[i] = new THREE.Line(geo, mat.clone());
+            scene.add(this.strings[i]);
+        }
     }
 
     /**
-     * Update mesh position and string geometry to match current physics state
+     * Update mesh position and both string geometries to match current physics state
      */
     updateVisuals() {
         if (this.mesh) {
             this.mesh.position.copy(this.worldPos);
         }
-        if (this.stringLine) {
-            const positions = this.stringLine.geometry.attributes.position;
-            const wp = this.worldPos;
-            positions.setXYZ(0, this.pivot.x, this.pivot.y, this.pivot.z);
-            positions.setXYZ(1, wp.x, wp.y, wp.z);
-            positions.needsUpdate = true;
+        const wp = this.worldPos;
+        for (let i = 0; i < 2; i++) {
+            if (this.strings[i]) {
+                const pos = this.strings[i].geometry.attributes.position;
+                pos.setXYZ(0, this.stringPivots[i].x, this.stringPivots[i].y, this.stringPivots[i].z);
+                pos.setXYZ(1, wp.x, wp.y, wp.z);
+                pos.needsUpdate = true;
+            }
         }
     }
 
@@ -171,11 +206,13 @@ export class Ball {
             this.mesh.material.dispose();
             this.mesh = null;
         }
-        if (this.stringLine) {
-            scene.remove(this.stringLine);
-            this.stringLine.geometry.dispose();
-            this.stringLine.material.dispose();
-            this.stringLine = null;
+        for (let i = 0; i < 2; i++) {
+            if (this.strings[i]) {
+                scene.remove(this.strings[i]);
+                this.strings[i].geometry.dispose();
+                this.strings[i].material.dispose();
+                this.strings[i] = null;
+            }
         }
     }
 }

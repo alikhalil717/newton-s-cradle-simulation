@@ -136,7 +136,7 @@ export class PhysicsEngine {
      * dynamics technique for pendulums/ropes). (report §5.4)
      */
     projectConstraint(ball) {
-        const L = ball.length;
+        const L = ball.effectiveLength;
         const pos = ball.pos;
 
         const r = pos.length();
@@ -147,7 +147,7 @@ export class PhysicsEngine {
             return;
         }
 
-        // Rescale position to length L
+        // Rescale position to effective length L (a fraction of the full string length)
         pos.multiplyScalar(L / r);
 
         // Remove radial velocity component (keep velocity tangent to sphere)

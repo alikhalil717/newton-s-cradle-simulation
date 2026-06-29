@@ -75,7 +75,9 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 // --- Newton's Cradle Frame / Stand ---
-function buildCradleFrame(barWidth = 0.35) {
+// Builds a complete stand: table → base plate → vertical posts → two top beams
+// The top beams spread apart in Z based on the string angle (stringHalfSpread)
+function buildCradleFrame(barWidth = 0.35, stringHalfSpread = 0) {
     const group = new THREE.Group();
 
     const barMat = new THREE.MeshStandardMaterial({
@@ -84,38 +86,72 @@ function buildCradleFrame(barWidth = 0.35) {
         roughness: 0.3,
     });
 
-    // Top horizontal bar — width adapts to ball chain
-    const barGeo = new THREE.BoxGeometry(Math.max(barWidth, 0.15), 0.015, 0.015);
-    const bar = new THREE.Mesh(barGeo, barMat);
-    bar.position.y = 0.5;
-    bar.castShadow = true;
-    group.add(bar);
-
-    // Vertical posts
-    const postGeo = new THREE.BoxGeometry(0.012, 0.8, 0.012);
     const postMat = new THREE.MeshStandardMaterial({
         color: 0x666666,
         metalness: 0.5,
         roughness: 0.4,
     });
 
-    const halfSpan = barGeo.parameters.width / 2 - 0.02;
-    const leftPost = new THREE.Mesh(postGeo, postMat);
-    leftPost.position.set(-halfSpan, 0.1, 0);
-    leftPost.castShadow = true;
-    group.add(leftPost);
+    const woodMat = new THREE.MeshStandardMaterial({
+        color: 0x5c3a1e,
+        roughness: 0.9,
+        metalness: 0.0,
+    });
 
-    const rightPost = new THREE.Mesh(postGeo, postMat);
-    rightPost.position.set(halfSpan, 0.1, 0);
-    rightPost.castShadow = true;
-    group.add(rightPost);
+    const width = Math.max(barWidth, 0.15);
+    const spread = Math.max(stringHalfSpread, 0.02); // minimum 2cm separation
+    const halfW = width / 2;
 
-    // Base
-    const baseGeo = new THREE.BoxGeometry(barWidth + 0.05, 0.025, 0.12);
+    // --- Table surface ---
+    const tableGeo = new THREE.BoxGeometry(width + 0.2, 0.03, spread * 2 + 0.15);
+    const table = new THREE.Mesh(tableGeo, woodMat);
+    table.position.y = -0.3;
+    table.receiveShadow = true;
+    group.add(table);
+
+    // --- Base plate (metal) on top of table ---
+    const baseGeo = new THREE.BoxGeometry(width + 0.05, 0.025, spread * 2 + 0.08);
     const base = new THREE.Mesh(baseGeo, barMat);
-    base.position.y = -0.3;
+    base.position.y = -0.28;
     base.receiveShadow = true;
     group.add(base);
+
+    // --- Vertical posts (4 corners) ---
+    const postGeo = new THREE.BoxGeometry(0.012, 0.78, 0.012);
+    const postPositions = [
+        [-halfW, 0.1, -spread],  // front-left
+        [halfW, 0.1, -spread],   // front-right
+        [-halfW, 0.1, spread],   // back-left
+        [halfW, 0.1, spread],    // back-right
+    ];
+    for (const pp of postPositions) {
+        const p = new THREE.Mesh(postGeo, postMat);
+        p.position.set(pp[0], pp[1], pp[2]);
+        p.castShadow = true;
+        group.add(p);
+    }
+
+    // --- Two parallel top beams (عارضتين) at Y = pivot height ---
+    // Position matches where the string tops attach
+    const beamGeo = new THREE.BoxGeometry(width, 0.015, 0.012);
+    const frontBeam = new THREE.Mesh(beamGeo, barMat);
+    frontBeam.position.set(0, 0.5, -spread);
+    frontBeam.castShadow = true;
+    group.add(frontBeam);
+
+    const backBeam = new THREE.Mesh(beamGeo, barMat);
+    backBeam.position.set(0, 0.5, spread);
+    backBeam.castShadow = true;
+    group.add(backBeam);
+
+    // --- Cross braces at top ends to connect the two beams ---
+    const crossGeo = new THREE.BoxGeometry(0.012, 0.015, spread * 2);
+    for (const xSign of [-1, 1]) {
+        const cross = new THREE.Mesh(crossGeo, barMat);
+        cross.position.set(xSign * halfW, 0.5, 0);
+        cross.castShadow = true;
+        group.add(cross);
+    }
 
     return group;
 }
@@ -136,8 +172,12 @@ export const state = {
 
     // Physics parameters (Table 1)
     mass: 0.5,
+    massPerBall: [],        // per-ball masses (auto-filled)
     radius: 0.0125,
+    radiusPerBall: [],      // per-ball radii
     length: 0.30,
+    lengthPerBall: [],      // per-ball string lengths
+    stringAngle: 0,          // angle between the two strings (degrees); 0 = single string
     gravity: 9.81,
     restitution: 0.97,
     airDrag: 0.003,
@@ -166,7 +206,13 @@ function getFrameWidth() {
     return chainSpan + 0.15;
 }
 
-let frame = buildCradleFrame(getFrameWidth());
+function getStringHalfSpread() {
+    // Match the ball's computation: halfSpread = length * sin(stringAngle/2)
+    const halfAngleRad = (state.stringAngle / 2) * Math.PI / 180;
+    return state.length * Math.sin(halfAngleRad);
+}
+
+let frame = buildCradleFrame(getFrameWidth(), getStringHalfSpread());
 scene.add(frame);
 
 function rebuildFrame() {
@@ -177,7 +223,7 @@ function rebuildFrame() {
             child.material.dispose();
         }
     });
-    frame = buildCradleFrame(getFrameWidth());
+    frame = buildCradleFrame(getFrameWidth(), getStringHalfSpread());
     scene.add(frame);
 }
 
@@ -197,15 +243,32 @@ function setupScenario(scenarioName) {
     state.balls = [];
     state.ballMeshes = [];
 
+    // Preserve per-ball values: extend arrays if N grew, otherwise truncate
+    while (state.massPerBall.length < state.N) {
+        // Extend with the last ball's value (or global default if empty)
+        const lastMass = state.massPerBall.length > 0 ? state.massPerBall[state.massPerBall.length - 1] : state.mass;
+        const lastRadius = state.radiusPerBall.length > 0 ? state.radiusPerBall[state.radiusPerBall.length - 1] : state.radius;
+        const lastLength = state.lengthPerBall.length > 0 ? state.lengthPerBall[state.lengthPerBall.length - 1] : state.length;
+        state.massPerBall.push(lastMass);
+        state.radiusPerBall.push(lastRadius);
+        state.lengthPerBall.push(lastLength);
+    }
+    if (state.massPerBall.length > state.N) {
+        state.massPerBall.length = state.N;
+        state.radiusPerBall.length = state.N;
+        state.lengthPerBall.length = state.N;
+    }
+
     // Build params from current state
     const params = {
         N: state.N,
-        mass: state.mass,
-        radius: state.radius,
-        length: state.length,
+        mass: state.massPerBall,
+        radius: state.radiusPerBall,
+        length: state.lengthPerBall,
         thetaDeg: state.thetaDeg,
         gap: state.gap,
         e: state.restitution,
+        stringAngle: state.stringAngle,
     };
 
     // Generate scenario
@@ -232,6 +295,12 @@ function setupScenario(scenarioName) {
 
     // Reset energy tracking for new scenario
     energyTracker.reset();
+}
+
+// Rebuild per-ball UI and frame when N or params change
+function onParamChange() {
+    setupScenario(state.scenario);
+    ui.rebuildPerBall();
 }
 
 // --- Energy HUD ---
@@ -270,7 +339,7 @@ const ui = new UIManager(state, {
         setupScenario(value);
     },
     onParamChange: () => {
-        setupScenario(state.scenario);
+        onParamChange();
     },
     onReset: () => {
         setupScenario(state.scenario);
