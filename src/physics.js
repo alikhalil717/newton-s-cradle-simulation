@@ -110,8 +110,10 @@ export class PhysicsEngine {
      * Compute all forces acting on a single ball
      */
     computeForces(ball) {
-        // Gravity (report §2.1.3-a): F_g = (0, -mg, 0)
-        ball.force.y -= ball.mass * this.g;
+        // Gravity (report §2.1.3-a): F_g = m·g along local down direction
+        // When pivotTilt = 0, gravityDir = (0, -1, 0) → identical to old code.
+        const gDir = ball.gravityDir;
+        ball.force.addScaledVector(gDir, ball.mass * this.g);
 
         // Air drag — linear model (report §2.1.3-c): F_air = -b·v
         ball.force.x -= this.b * ball.vel.x;

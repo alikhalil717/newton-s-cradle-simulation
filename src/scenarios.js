@@ -30,6 +30,20 @@ export class ScenarioManager {
         return Object.keys(this.scenarios);
     }
 
+    /** Keys exposed in the UI dropdown (excludes Case 4 and Case 7) */
+    get selectableNames() {
+        return [
+            'Case 1 — Single ball pull, N=5',
+            'Case 2 — Two balls pulled, N=5',
+            'Case 3 — N=7 chain',
+            'Case 5 — Tilted pivots',
+            'Case 6 — Crossed strings',
+            'Case 8 — Gaps between balls',
+            'Case 9 — Fully inelastic (e≈0)',
+            'Custom',
+        ];
+    }
+
     /**
      * Apply a scenario preset and return configuration
      * @param {string} name - Scenario name
@@ -49,7 +63,7 @@ export class ScenarioManager {
     createChain(N, ballParams = {}) {
         const R = ballParams.radius ?? ballParams.R ?? 0.0125;
         const L = ballParams.L ?? ballParams.length ?? 0.30;
-        const mass = ballParams.mass ?? 0.065;
+        const mass = ballParams.mass ?? 0.5;
         const gap = ballParams.gap ?? 0;
         const stringAngle = ballParams.stringAngle ?? 0;
         const balls = [];
@@ -68,6 +82,7 @@ export class ScenarioManager {
                 radius: Array.isArray(R) ? (R[i] ?? R[R.length - 1]) : R,
                 length: Array.isArray(L) ? (L[i] ?? L[L.length - 1]) : L,
                 stringAngle,
+                pivotTilt: ballParams.pivotTilt ?? 0,
             });
             balls.push(ball);
         }
@@ -105,15 +120,17 @@ export class ScenarioManager {
 
     // --- Case 3 — N=7 chain (report §7, case 3) ---
     // Same single-pull setup, larger chain
+    // Initial N=7 is set in main.js's onScenarioChange — after that,
+    // the GUI slider controls N freely.
     case3(params = {}) {
-        const N = 7;
+        const N = params.N || 7;
         const theta0 = THREE.MathUtils.degToRad(params.thetaDeg || 30);
 
         const balls = this.createChain(N, params);
         balls[0].setAngularState(theta0, Math.PI);
 
-        // Sync state.N back to 7 so the GUI slider matches
-        return { balls, params: { restitution: 0.97, N: 7 } };
+        // Do NOT return N:7 here — that would overwrite state.N on every param change.
+        return { balls, params: { restitution: 0.97 } };
     }
 
     // --- Case 4 — One string longer/shorter (report §7, case 4) ---
@@ -136,8 +153,9 @@ export class ScenarioManager {
     }
 
     // --- Case 5 — Tilted pivots (report §7, case 5) ---
-    // Offset middle pivot by angle α
-    // Expect non-parallel impact velocities → sideways drift
+    // Tilt the middle ball's local gravity direction by angle α.
+    // This produces a non-vertical equilibrium position and out-of-plane
+    // collision velocities (genuine 3D motion).
     case5(params = {}) {
         const N = params.N || 5;
         const alpha = THREE.MathUtils.degToRad(params.alphaDeg || 10);
@@ -145,9 +163,8 @@ export class ScenarioManager {
         const balls = this.createChain(N, params);
         const midIdx = Math.floor(N / 2);
 
-        // Tilt the middle ball's pivot sideways
-        const L = params.length ?? params.L ?? 0.30;
-        balls[midIdx].pivot.x += L * Math.sin(alpha);
+        // Set tilt on the middle ball — physics.js will use gravityDir
+        balls[midIdx].pivotTilt = alpha;
 
         const theta0 = THREE.MathUtils.degToRad(params.thetaDeg || 30);
         balls[0].setAngularState(theta0, Math.PI);
@@ -164,13 +181,18 @@ export class ScenarioManager {
         const balls = this.createChain(N, params);
         const theta0 = THREE.MathUtils.degToRad(params.thetaDeg || 20);
 
-        // Give alternating balls an out-of-plane pivot offset
+        // Get radius for scaling the out-of-plane offset
+        const R = Array.isArray(params.radius)
+            ? (params.radius[0] ?? params.radius[params.radius.length - 1])
+            : (params.radius ?? 0.0125);
+
+        // Give alternating balls an out-of-plane pivot offset scaled to radius
         // (setAngularState with theta=0 gives no displacement regardless of phi)
         for (let i = 0; i < N; i++) {
             if (i === 0) {
                 balls[i].setAngularState(theta0, Math.PI);
             } else if (i % 2 === 1) {
-                balls[i].pivot.z += 0.005; // small out-of-plane offset
+                balls[i].pivot.z += 0.3 * R; // ~30% of radius, visibly off-axis
             }
         }
 

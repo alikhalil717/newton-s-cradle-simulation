@@ -23,13 +23,14 @@ export class Ball {
      * @param {number} params.radius - Ball radius (m)
      * @param {number} params.length - String length (m)
      */
-    constructor({ index, pivot, mass = 0.065, radius = 0.0125, length = 0.30, stringAngle = 0 }) {
+    constructor({ index, pivot, mass = 0.5, radius = 0.0125, length = 0.30, stringAngle = 0, pivotTilt = 0 }) {
         this.index = index;
         this.pivot = pivot.clone();
         this.mass = mass;
         this.radius = radius;
         this.length = length;           // physical string length (each of the two strings)
         this.stringAngle = stringAngle; // angle between the two strings (degrees)
+        this.pivotTilt = pivotTilt;     // radians — tilt of local gravity direction (Case 5)
 
         // Two-string derived geometry
         this.effectiveLength = length;  // effective pendulum length L_eff = L * cos(α/2)
@@ -58,6 +59,17 @@ export class Ball {
         const halfAngleRad = THREE.MathUtils.degToRad(this.stringAngle / 2);
         this.effectiveLength = this.length * Math.cos(halfAngleRad);
         this.stringHalfSpread = this.length * Math.sin(halfAngleRad);
+    }
+
+    /** Local "down" direction, tilted by pivotTilt around Z axis.
+     *  When pivotTilt = 0, returns (0, -1, 0) — standard vertical gravity.
+     *  Used by physics.js to apply gravity along the tilted direction. */
+    get gravityDir() {
+        return new THREE.Vector3(
+            Math.sin(this.pivotTilt),
+            -Math.cos(this.pivotTilt),
+            0
+        );
     }
 
     /** World-space position = pivot center + local pos */

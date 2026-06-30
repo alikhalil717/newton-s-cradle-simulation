@@ -188,7 +188,7 @@ export const state = {
 
     // Scenario
     scenario: 'Case 1 — Single ball pull, N=5',
-    scenarioNames: scenarioManager.names,
+    scenarioNames: scenarioManager.selectableNames,
 
     // Simulation state
     playing: true,
@@ -336,6 +336,10 @@ setupScenario(state.scenario);
 const ui = new UIManager(state, {
     onScenarioChange: (value) => {
         state.scenario = value;
+        // Case 3 starts at N=7 — set it once before setupScenario reads state.N
+        if (value === 'Case 3 — N=7 chain') {
+            state.N = 7;
+        }
         setupScenario(value);
     },
     onParamChange: () => {
