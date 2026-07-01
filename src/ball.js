@@ -100,6 +100,23 @@ export class Ball {
         return this.mass * g * (currentY - lowestY);
     }
 
+    /**
+     * Current string tension (≈ pivot normal force), report eq. T = mg·cos(θ) + mL·θ̇²
+     * Computed in Cartesian form: radial component of gravity + centripetal term.
+     * @param {number} g - Gravitational acceleration (m/s²)
+     * @returns {number} Tension force magnitude (N)
+     */
+    getTension(g) {
+        const L = this.effectiveLength;
+        const radialDir = this.pos.clone().normalize();
+        const gravityForce = this.gravityDir.clone().multiplyScalar(this.mass * g);
+        const radialGravity = gravityForce.dot(radialDir); // ≈ m g cosθ
+        const vRadial = radialDir.clone().multiplyScalar(this.vel.dot(radialDir));
+        const vTangential = this.vel.clone().sub(vRadial);
+        const centripetal = this.mass * vTangential.lengthSq() / L; // m L θ̇² in tangential-speed form
+        return Math.max(0, radialGravity + centripetal);
+    }
+
     /** Reset to hanging straight down with zero velocity */
     reset() {
         this.pos.set(0, -this.effectiveLength, 0);

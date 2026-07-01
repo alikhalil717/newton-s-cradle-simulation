@@ -276,6 +276,7 @@ function setupScenario(scenarioName) {
     const balls = result.balls;
     if (result.params.restitution !== undefined) {
         collisionSystem.restitution = result.params.restitution;
+        state.restitution = result.params.restitution; // sync so syncPhysicsParams doesn't override
     }
     if (result.params.N !== undefined) {
         state.N = result.params.N;
@@ -337,8 +338,21 @@ const ui = new UIManager(state, {
     onScenarioChange: (value) => {
         state.scenario = value;
         // Case 3 starts at N=7 — set it once before setupScenario reads state.N
-        if (value === 'Case 3 — N=7 chain') {
-            state.N = 7;
+        // Restore default params for base cases
+        if (value !== 'Case 3 — N=7 chain' && state.N === 7 && state.scenario === 'Case 3 — N=7 chain') {
+            state.N = 5;
+        }
+        // Case 8 sets gap=0.01; any other scenario resets gap to 0
+        if (value === 'Case 8 — Gaps between balls') {
+            state.gap = 0.01;
+        } else {
+            state.gap = 0;
+        }
+        // Case 9 sets e≈0; any other scenario resets to 0.97
+        if (value === 'Case 9 — Fully inelastic (e≈0)') {
+            state.restitution = 0.01;
+        } else {
+            state.restitution = 0.97;
         }
         setupScenario(value);
     },

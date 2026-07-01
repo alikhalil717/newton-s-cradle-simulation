@@ -67,12 +67,13 @@ export class PhysicsEngine {
             const v2 = ball.vel.lengthSq();
             this._dragWork += this.b * v2 * this.dt;
 
-            // Track friction power: P_friction = μk·m·|v_tangential|²
-            const radialDir = ball.pos.clone().normalize();
-            const vRadial = radialDir.clone().multiplyScalar(ball.vel.dot(radialDir));
-            const vTangential = ball.vel.clone().sub(vRadial);
-            const vt2 = vTangential.lengthSq();
-            this._frictionWork += this.muK * ball.mass * vt2 * this.dt;
+            // Track friction power: P_friction = μk · N_pivot · |v_tangential|  (report §2.1.3-d)
+            // N_pivot was computed and cached in computeForces() above — reuse it.
+            const N_pivot = ball._lastNpivot || 0;
+            const tangentialSpeed = ball._lastTangentialSpeed || 0;
+            if (N_pivot > 0 && tangentialSpeed > 0) {
+                this._frictionWork += this.muK * N_pivot * tangentialSpeed * this.dt;
+            }
         }
 
         // 2. Integrate (semi-implicit Euler)
@@ -120,12 +121,25 @@ export class PhysicsEngine {
         ball.force.y -= this.b * ball.vel.y;
         ball.force.z -= this.b * ball.vel.z;
 
-        // Pivot friction — tangential velocity damping (report §2.1.3-d)
-        // Get total tangential velocity (perpendicular to radial direction)
+        // Pivot friction — Coulomb (dry) friction (report §2.1.3-d)
+        // τ_pivot = μk · N_pivot · sign(θ̇)
+        // Constant magnitude, opposing direction of tangential motion.
         const radialDir = ball.pos.clone().normalize();
         const vRadial = radialDir.clone().multiplyScalar(ball.vel.dot(radialDir));
         const vTangential = ball.vel.clone().sub(vRadial);
-        ball.force.addScaledVector(vTangential, -this.muK * ball.mass);
+        const tangentialSpeed = vTangential.length();
+        const EPS = 1e-5;
+        if (tangentialSpeed > EPS) {
+            const N_pivot = ball.getTension(this.g);
+            // Cache N_pivot on the ball for reuse by step() energy tracking
+            ball._lastNpivot = N_pivot;
+            ball._lastTangentialSpeed = tangentialSpeed;
+            const frictionDir = vTangential.clone().divideScalar(tangentialSpeed);
+            ball.force.addScaledVector(frictionDir, -this.muK * N_pivot);
+        } else {
+            ball._lastNpivot = 0;
+            ball._lastTangentialSpeed = 0;
+        }
     }
 
     /**
