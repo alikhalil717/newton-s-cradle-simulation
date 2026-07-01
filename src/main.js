@@ -171,9 +171,9 @@ export const state = {
     controls,
 
     // Physics parameters (Table 1)
-    mass: 0.5,
+    mass: 0.065,
     massPerBall: [],        // per-ball masses (auto-filled)
-    radius: 0.0125,
+    radius: 0.02,
     radiusPerBall: [],      // per-ball radii
     length: 0.30,
     lengthPerBall: [],      // per-ball string lengths

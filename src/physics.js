@@ -41,6 +41,12 @@ export class PhysicsEngine {
         this._dragWork = 0;
         this._frictionWork = 0;
         this._collisionLoss = 0;
+
+        // NOTE: P_internal (Kelvin–Voigt, §5.1.4) and P_sound (acoustic
+        // radiation, §5.1.5) are omitted — the report itself characterizes
+        // them as second-order effects for typical steel-ball Newton's
+        // Cradles, where instantaneous-impulse + air drag + Coulomb
+        // friction already capture the dominant dynamics.
     }
 
     /** Reset per-frame energy accumulators */

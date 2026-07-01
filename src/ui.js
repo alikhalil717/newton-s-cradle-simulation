@@ -52,7 +52,7 @@ export class UIManager {
         // --- Physics parameters (Table 1) ---
         this.paramsFolder = this.gui.addFolder('Physics Parameters');
 
-        this.paramsFolder.add(this.state, 'mass', 0.1, 1.0, 0.01)
+        this.paramsFolder.add(this.state, 'mass', 0.01, 1.0, 0.001)
             .name('Mass (kg) — default')
             .onChange(this.callbacks.onParamChange);
 
@@ -117,7 +117,7 @@ export class UIManager {
                 state: this.state,
             };
             const sub = this.perBallFolder.addFolder(`Ball ${i + 1}`);
-            const mc = sub.add(ballObj, 'mass', 0.1, 1.0, 0.01)
+            const mc = sub.add(ballObj, 'mass', 0.01, 1.0, 0.001)
                 .name('Mass (kg)')
                 .onChange(this.callbacks.onParamChange);
             const rc = sub.add(ballObj, 'radius', 0.005, 0.03, 0.001)

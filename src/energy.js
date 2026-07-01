@@ -7,7 +7,7 @@
  * Dissipation components (report §5.1):
  *   ΔE_collision = ½μ·v_rel²·(1-e²)       — tracked by CollisionSystem
  *   P_air = b|v|²                          — tracked by PhysicsEngine
- *   P_friction = μk·m·|v_tangential|²      — tracked by PhysicsEngine
+ *   P_friction = μk·N_pivot·|v_tangential|  — tracked by PhysicsEngine
  *
  * Note: the constraint projection (position-based-dynamics) introduces a
  * small amount of numerical energy drift (~5-10% over several seconds),

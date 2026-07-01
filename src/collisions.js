@@ -8,6 +8,12 @@
  *
  * Default method: instantaneous impulse (efficient, matches case studies)
  *
+ * NOTE: A Hertzian contact mode (§4.2–4.3, using stiffness H_k from Table 1)
+ * is not implemented here — the report uses instantaneous-impulse as its
+ * primary model (§1.4) for all case studies in Ch. 7, and describes Hertz
+ * contact as an optional higher-fidelity refinement. The instantaneous
+ * model is sufficient for the report's validation scope.
+ *
  * For unequal masses, the general restitution formulas (correction #6):
  *   v₁' = [(m₁ - e·m₂)v₁ + (1+e)m₂v₂] / (m₁+m₂)
  *   v₂' = [(1+e)m₁v₁ + (m₂ - e·m₁)v₂] / (m₁+m₂)
@@ -110,22 +116,7 @@ export class CollisionSystem {
         b.vel.addScaledVector(impulse, -invMass2);
     }
 
-    /**
-     * Compute energy lost in a collision (static helper)
-     * ΔE = ½μ·v_rel²·(1-e²)  (report §5.1.1)
-     *
-     * @param {Ball} a
-     * @param {Ball} b
-     * @returns {number} Energy lost (J)
-     */
-    energyLost(a, b) {
-        const relVel = new THREE.Vector3().copy(a.vel).sub(b.vel);
-        const relVelNormal = relVel.dot(
-            new THREE.Vector3().copy(b.worldPos).sub(a.worldPos).normalize()
-        );
-        if (relVelNormal > 0) return 0;
-
-        const mu = (a.mass * b.mass) / (a.mass + b.mass); // reduced mass
-        return 0.5 * mu * relVelNormal * relVelNormal * (1 - this.restitution * this.restitution);
-    }
+    // Note: energyLost() is intentionally omitted — the core dissipation logic
+    // is inlined in resolvePair() where it's actually used (this._frameEnergyLoss).
+    // The old static helper duplicated that code and was never called externally.
 }
