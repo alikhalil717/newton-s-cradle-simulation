@@ -66,13 +66,14 @@ export class ScenarioManager {
         const mass = ballParams.mass ?? 0.5;
         const gap = ballParams.gap ?? 0;
         const stringAngle = ballParams.stringAngle ?? 0;
+        const pivotY = ballParams.pivotY ?? 0.5;
         const balls = [];
         const spacing = 2 * (Array.isArray(R) ? Math.max(...R) : R) + gap;
 
         for (let i = 0; i < N; i++) {
             const pivot = new THREE.Vector3(
                 (i - (N - 1) / 2) * spacing,
-                0.5, // bar height
+                pivotY,
                 0
             );
             const ball = new Ball({
@@ -156,6 +157,13 @@ export class ScenarioManager {
     // Tilt the middle ball's local gravity direction by angle α.
     // This produces a non-vertical equilibrium position and out-of-plane
     // collision velocities (genuine 3D motion).
+    //
+    // FIXED: The equilibrium position for a ball with pivotTilt > 0
+    // must be along its tilted gravity direction, not straight down.
+    // Previously the tilted ball was reset to (0, -L, 0) — straight down
+    // in local coords — which is NOT the equilibrium when gravity is
+    // tilted. This caused the ball to swing from an incorrect rest
+    // position, pushing neighbors and creating the "tilted at equilibrium" bug.
     case5(params = {}) {
         const N = params.N || 5;
         const alpha = THREE.MathUtils.degToRad(params.alphaDeg || 10);
@@ -163,9 +171,20 @@ export class ScenarioManager {
         const balls = this.createChain(N, params);
         const midIdx = Math.floor(N / 2);
 
-        // Set tilt on the middle ball — physics.js will use gravityDir
+        // Set tilt on the middle ball
         balls[midIdx].pivotTilt = alpha;
 
+        // The equilibrium position for a tilted ball is along its
+        // gravityDir = (sin(α), -cos(α), 0), at distance L from pivot
+        const L = balls[midIdx].effectiveLength;
+        const gDir = balls[midIdx].gravityDir;
+        balls[midIdx].pos.set(
+            gDir.x * L,
+            gDir.y * L,
+            gDir.z * L
+        );
+
+        // Pull the first ball as usual
         const theta0 = THREE.MathUtils.degToRad(params.thetaDeg || 30);
         balls[0].setAngularState(theta0, Math.PI);
 

@@ -1,3 +1,9 @@
+/**
+ * Newton's Cradle — Main entry point
+ *
+ * Orchestrates the scene, physics, collision, energy tracking,
+ * scenarios, UI, and input handling.
+ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Ball } from './ball.js';
@@ -6,178 +12,65 @@ import { CollisionSystem } from './collisions.js';
 import { EnergyTracker } from './energy.js';
 import { ScenarioManager } from './scenarios.js';
 import { UIManager } from './ui.js';
+import { StringPhysics } from './stringPhysics.js';
+import { RoomBuilder } from './room.js';
 
-// --- Scene ---
+// ============================================================
+// 1. Scene, Camera, Renderer
+// ============================================================
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a1a);
-scene.fog = new THREE.Fog(0x1a1a1a, 5, 15);
+// No fog for the room — we want it fully visible
 
-// --- Camera ---
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 50);
-camera.position.set(1.2, 0.8, 1.8);
-camera.lookAt(0, 0, 0);
+const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.01, 10);
+camera.position.set(1.5, 1.0, 2.2);
+camera.lookAt(0, 0.1, 0);
 
-// --- Renderer ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.bias = -0.0005;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
 
-// --- Controls ---
+// ============================================================
+// 2. Orbit Controls
+// ============================================================
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.15, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.minDistance = 0.3;
-controls.maxDistance = 5;
+controls.minDistance = 0.4;
+controls.maxDistance = 2.8;
 controls.update();
 
-// --- Lighting ---
-const ambientLight = new THREE.AmbientLight(0x404060, 0.5);
-scene.add(ambientLight);
-
-const mainLight = new THREE.DirectionalLight(0xffffff, 2.0);
-mainLight.position.set(2, 4, 3);
-mainLight.castShadow = true;
-mainLight.shadow.mapSize.width = 1024;
-mainLight.shadow.mapSize.height = 1024;
-mainLight.shadow.camera.near = 0.1;
-mainLight.shadow.camera.far = 10;
-mainLight.shadow.camera.left = -2;
-mainLight.shadow.camera.right = 2;
-mainLight.shadow.camera.top = 2;
-mainLight.shadow.camera.bottom = -2;
-scene.add(mainLight);
-
-const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
-fillLight.position.set(-2, 1, -2);
-scene.add(fillLight);
-
-const rimLight = new THREE.DirectionalLight(0xffffff, 0.5);
-rimLight.position.set(-1, 0.5, 2);
-scene.add(rimLight);
-
-// --- Ground ---
-const groundGeo = new THREE.PlaneGeometry(6, 6);
-const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x222222,
-    roughness: 0.8,
-    metalness: 0.2,
-});
-const ground = new THREE.Mesh(groundGeo, groundMat);
-ground.rotation.x = -Math.PI / 2;
-ground.position.y = -0.3;
-ground.receiveShadow = true;
-scene.add(ground);
-
-// --- Newton's Cradle Frame / Stand ---
-// Builds a complete stand: table → base plate → vertical posts → two top beams
-// The top beams spread apart in Z based on the string angle (stringHalfSpread)
-function buildCradleFrame(barWidth = 0.35, stringHalfSpread = 0) {
-    const group = new THREE.Group();
-
-    const barMat = new THREE.MeshStandardMaterial({
-        color: 0x888888,
-        metalness: 0.7,
-        roughness: 0.3,
-    });
-
-    const postMat = new THREE.MeshStandardMaterial({
-        color: 0x666666,
-        metalness: 0.5,
-        roughness: 0.4,
-    });
-
-    const woodMat = new THREE.MeshStandardMaterial({
-        color: 0x5c3a1e,
-        roughness: 0.9,
-        metalness: 0.0,
-    });
-
-    const width = Math.max(barWidth, 0.15);
-    const spread = Math.max(stringHalfSpread, 0.02); // minimum 2cm separation
-    const halfW = width / 2;
-
-    // --- Table surface ---
-    const tableGeo = new THREE.BoxGeometry(width + 0.2, 0.03, spread * 2 + 0.15);
-    const table = new THREE.Mesh(tableGeo, woodMat);
-    table.position.y = -0.3;
-    table.receiveShadow = true;
-    group.add(table);
-
-    // --- Base plate (metal) on top of table ---
-    const baseGeo = new THREE.BoxGeometry(width + 0.05, 0.025, spread * 2 + 0.08);
-    const base = new THREE.Mesh(baseGeo, barMat);
-    base.position.y = -0.28;
-    base.receiveShadow = true;
-    group.add(base);
-
-    // --- Vertical posts (4 corners) ---
-    const postGeo = new THREE.BoxGeometry(0.012, 0.78, 0.012);
-    const postPositions = [
-        [-halfW, 0.1, -spread],  // front-left
-        [halfW, 0.1, -spread],   // front-right
-        [-halfW, 0.1, spread],   // back-left
-        [halfW, 0.1, spread],    // back-right
-    ];
-    for (const pp of postPositions) {
-        const p = new THREE.Mesh(postGeo, postMat);
-        p.position.set(pp[0], pp[1], pp[2]);
-        p.castShadow = true;
-        group.add(p);
-    }
-
-    // --- Two parallel top beams (عارضتين) at Y = pivot height ---
-    // Position matches where the string tops attach
-    const beamGeo = new THREE.BoxGeometry(width, 0.015, 0.012);
-    const frontBeam = new THREE.Mesh(beamGeo, barMat);
-    frontBeam.position.set(0, 0.5, -spread);
-    frontBeam.castShadow = true;
-    group.add(frontBeam);
-
-    const backBeam = new THREE.Mesh(beamGeo, barMat);
-    backBeam.position.set(0, 0.5, spread);
-    backBeam.castShadow = true;
-    group.add(backBeam);
-
-    // --- Cross braces at top ends to connect the two beams ---
-    const crossGeo = new THREE.BoxGeometry(0.012, 0.015, spread * 2);
-    for (const xSign of [-1, 1]) {
-        const cross = new THREE.Mesh(crossGeo, barMat);
-        cross.position.set(xSign * halfW, 0.5, 0);
-        cross.castShadow = true;
-        group.add(cross);
-    }
-
-    return group;
-}
-
-// --- Physics engine ---
+// ============================================================
+// 3. Systems
+// ============================================================
 const physics = new PhysicsEngine();
 const collisionSystem = new CollisionSystem();
 const energyTracker = new EnergyTracker();
 const scenarioManager = new ScenarioManager();
+const stringPhysics = new StringPhysics();
 
-// --- Global state (shared across modules) ---
+physics.collisionSystem = collisionSystem;
+
+// ============================================================
+// 4. Global State
+// ============================================================
 export const state = {
-    // Scene objects
-    scene,
-    camera,
-    renderer,
-    controls,
+    scene, camera, renderer, controls,
 
-    // Physics parameters (Table 1)
     mass: 0.065,
-    massPerBall: [],        // per-ball masses (auto-filled)
+    massPerBall: [],
     radius: 0.02,
-    radiusPerBall: [],      // per-ball radii
+    radiusPerBall: [],
     length: 0.30,
-    lengthPerBall: [],      // per-ball string lengths
-    stringAngle: 0,          // angle between the two strings (degrees); 0 = single string
+    lengthPerBall: [],
+    stringAngle: 0,
     gravity: 9.81,
     restitution: 0.97,
     airDrag: 0.003,
@@ -186,66 +79,262 @@ export const state = {
     thetaDeg: 30,
     gap: 0,
 
-    // Scenario
     scenario: 'Case 1 — Single ball pull, N=5',
     scenarioNames: scenarioManager.selectableNames,
 
-    // Simulation state
     playing: true,
     balls: [],
     ballMeshes: [],
 
-    // Energy
     showEnergy: false,
+
+    stringType: 'regular',
+    stringTypes: ['regular', 'steel', 'elastic'],
 };
 
-// --- Build frame (after state is initialized) ---
+// ============================================================
+// 5. Room
+// ============================================================
+const roomBuilder = new RoomBuilder(scene);
+roomBuilder.build();
+
+// ============================================================
+// 6. Cradle Frame / Stand
+// ============================================================
+const BRASS = { color: 0xc8a050, metalness: 0.8, roughness: 0.25 };
+const STEEL = { color: 0x909090, metalness: 0.7, roughness: 0.3 };
+const DARK = { color: 0x2a2a2a, metalness: 0.6, roughness: 0.4 };
+
+function buildCradleFrame(barWidth = 0.35, stringHalfSpread = 0) {
+    const group = new THREE.Group();
+    const barMat = new THREE.MeshStandardMaterial(STEEL);
+    const brassMat = new THREE.MeshStandardMaterial(BRASS);
+    const darkMat = new THREE.MeshStandardMaterial(DARK);
+
+    const width = Math.max(barWidth, 0.15);
+    const spread = Math.max(stringHalfSpread, 0.02);
+    const halfW = width / 2;
+
+    // Base plate (sits on top of pedestal)
+    const basePlate = new THREE.Mesh(
+        new THREE.BoxGeometry(width + 0.06, 0.012, spread * 2 + 0.06),
+        darkMat
+    );
+    basePlate.position.set(0, -0.3 + 0.26 + 0.04 + 0.006, 0);
+    basePlate.receiveShadow = true;
+    group.add(basePlate);
+
+    // Vertical posts — refined cylindrical look using box with bevel hint
+    const postGeo = new THREE.CylinderGeometry(0.006, 0.008, 0.78, 8);
+    const postPositions = [
+        [-halfW, 0.1 + 0.01, -spread], [halfW, 0.1 + 0.01, -spread],
+        [-halfW, 0.1 + 0.01, spread],  [halfW, 0.1 + 0.01, spread],
+    ];
+    for (const pp of postPositions) {
+        const p = new THREE.Mesh(postGeo, brassMat);
+        p.position.set(pp[0], pp[1], pp[2]);
+        p.castShadow = true;
+        group.add(p);
+    }
+
+    // Top beams — two parallel bars (front and back)
+    const beamGeo = new THREE.BoxGeometry(width, 0.012, 0.008);
+    const frontBeam = new THREE.Mesh(beamGeo, barMat);
+    frontBeam.position.set(0, 0.5 + 0.01, -spread);
+    frontBeam.castShadow = true;
+    group.add(frontBeam);
+
+    const backBeam = new THREE.Mesh(beamGeo, barMat);
+    backBeam.position.set(0, 0.5 + 0.01, spread);
+    backBeam.castShadow = true;
+    group.add(backBeam);
+
+    // Cross connectors at ends
+    const crossGeo = new THREE.BoxGeometry(0.008, 0.012, spread * 2);
+    for (const xSign of [-1, 1]) {
+        const cross = new THREE.Mesh(crossGeo, barMat);
+        cross.position.set(xSign * halfW, 0.5 + 0.01, 0);
+        cross.castShadow = true;
+        group.add(cross);
+    }
+
+    // Decorative finials on top of posts
+    const finialGeo = new THREE.SphereGeometry(0.008, 8, 8);
+    for (const pp of postPositions) {
+        const fin = new THREE.Mesh(finialGeo, brassMat);
+        fin.position.set(pp[0], 0.5 + 0.01 + 0.012, pp[2]);
+        fin.castShadow = true;
+        group.add(fin);
+    }
+
+    // Small nameplate
+    const plateMat = new THREE.MeshStandardMaterial({
+        color: 0xbba060,
+        metalness: 0.7,
+        roughness: 0.3,
+    });
+    const nameplate = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, 0.004, 0.025),
+        plateMat
+    );
+    nameplate.position.set(0, 0.18, -spread - 0.006);
+    group.add(nameplate);
+
+    return group;
+}
+
 function getFrameWidth() {
     const spacing = 2 * state.radius + state.gap;
-    const chainSpan = (state.N - 1) * spacing;
-    return chainSpan + 0.15;
+    return (state.N - 1) * spacing + 0.15;
 }
 
 function getStringHalfSpread() {
-    // Match the ball's computation: halfSpread = length * sin(stringAngle/2)
-    const halfAngleRad = (state.stringAngle / 2) * Math.PI / 180;
+    const halfAngleRad = THREE.MathUtils.degToRad(state.stringAngle / 2);
     return state.length * Math.sin(halfAngleRad);
 }
 
+// Position the frame on top of the pedestal
+const PEDESTAL_TOP_Y = -0.33 + 0.04 + 0.55 + 0.02; // ≈ 0.28
+const FRAME_BASE_Y = PEDESTAL_TOP_Y;
+// Y-coordinate for ball pivots in world space (frame beams are at local y=0.5)
+const PIVOT_Y = FRAME_BASE_Y + 0.5;
+
 let frame = buildCradleFrame(getFrameWidth(), getStringHalfSpread());
+frame.position.y = FRAME_BASE_Y;
 scene.add(frame);
 
 function rebuildFrame() {
     scene.remove(frame);
     frame.traverse(child => {
-        if (child.isMesh) {
-            child.geometry.dispose();
-            child.material.dispose();
-        }
+        if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); }
     });
     frame = buildCradleFrame(getFrameWidth(), getStringHalfSpread());
+    frame.position.y = FRAME_BASE_Y;
     scene.add(frame);
 }
 
-// --- Timing ---
-let lastTime = performance.now();
-let frameCount = 0;
+// ============================================================
+// 8. WASD Camera Movement
+// ============================================================
+const keys = { w: false, a: false, s: false, d: false };
+document.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+    if (key in keys) { keys[key] = true; e.preventDefault(); }
+});
+document.addEventListener('keyup', (e) => {
+    const key = e.key.toLowerCase();
+    if (key in keys) { keys[key] = false; e.preventDefault(); }
+});
 
-// --- Wire collision system into physics engine ---
-physics.collisionSystem = collisionSystem;
+function updateWASDCamera(delta) {
+    const speed = 0.6 * delta;
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
+    const right = new THREE.Vector3();
+    right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
 
-// --- Scenario setup ---
+    const move = new THREE.Vector3();
+    if (keys.w) move.add(forward);
+    if (keys.s) move.sub(forward);
+    if (keys.a) move.sub(right);
+    if (keys.d) move.add(right);
+
+    if (move.lengthSq() > 0) {
+        move.normalize().multiplyScalar(speed);
+        controls.target.add(move);
+        camera.position.add(move);
+        controls.update();
+    }
+}
+
+// ============================================================
+// 9. Ball Dragging
+// ============================================================
+let dragState = null;
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+function getPointerNDC(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    return new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+    );
+}
+
+function getIntersectedBall(event) {
+    const ndc = getPointerNDC(event);
+    raycaster.setFromCamera(ndc, camera);
+    const meshes = state.ballMeshes.filter(m => m !== null);
+    const intersects = raycaster.intersectObjects(meshes);
+    if (intersects.length > 0) {
+        const hitMesh = intersects[0].object;
+        const idx = state.ballMeshes.indexOf(hitMesh);
+        if (idx >= 0 && idx < state.balls.length) {
+            return { ball: state.balls[idx], mesh: hitMesh, point: intersects[0].point };
+        }
+    }
+    return null;
+}
+
+renderer.domElement.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    const hit = getIntersectedBall(event);
+    if (hit) {
+        controls.enabled = false;
+        const camDir = new THREE.Vector3();
+        camera.getWorldDirection(camDir);
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, hit.ball.worldPos);
+        dragState = {
+            ball: hit.ball,
+            plane,
+            offset: new THREE.Vector3().copy(hit.ball.worldPos).sub(hit.point),
+            mouseWorld: hit.point.clone(),
+        };
+        renderer.domElement.style.cursor = 'grabbing';
+    }
+});
+
+renderer.domElement.addEventListener('pointermove', (event) => {
+    if (dragState) {
+        const ndc = getPointerNDC(event);
+        raycaster.setFromCamera(ndc, camera);
+        const intersectPt = new THREE.Vector3();
+        const hit = raycaster.ray.intersectPlane(dragState.plane, intersectPt);
+        if (hit) {
+            const desiredWorld = intersectPt.clone().add(dragState.offset);
+            const localPos = desiredWorld.sub(dragState.ball.pivot);
+            const L = dragState.ball.effectiveLength;
+            if (localPos.length() > 0) {
+                localPos.normalize().multiplyScalar(L);
+            }
+            dragState.ball.pos.copy(localPos);
+            dragState.ball.vel.set(0, 0, 0);
+        }
+    }
+});
+
+window.addEventListener('pointerup', () => {
+    if (dragState) {
+        dragState = null;
+        controls.enabled = true;
+        renderer.domElement.style.cursor = 'default';
+    }
+});
+
+// ============================================================
+// 10. Scenario Setup
+// ============================================================
 function setupScenario(scenarioName) {
-    // Clear existing balls
     for (const ball of state.balls) {
         ball.dispose(scene);
     }
     state.balls = [];
     state.ballMeshes = [];
 
-    // Preserve per-ball values: extend arrays if N grew, otherwise truncate
     while (state.massPerBall.length < state.N) {
-        // Extend with the last ball's value (or global default if empty)
         const lastMass = state.massPerBall.length > 0 ? state.massPerBall[state.massPerBall.length - 1] : state.mass;
         const lastRadius = state.radiusPerBall.length > 0 ? state.radiusPerBall[state.radiusPerBall.length - 1] : state.radius;
         const lastLength = state.lengthPerBall.length > 0 ? state.lengthPerBall[state.lengthPerBall.length - 1] : state.length;
@@ -259,7 +348,6 @@ function setupScenario(scenarioName) {
         state.lengthPerBall.length = state.N;
     }
 
-    // Build params from current state
     const params = {
         N: state.N,
         mass: state.massPerBall,
@@ -269,20 +357,20 @@ function setupScenario(scenarioName) {
         gap: state.gap,
         e: state.restitution,
         stringAngle: state.stringAngle,
+        pivotY: PIVOT_Y,
     };
 
-    // Generate scenario
     const result = scenarioManager.apply(scenarioName, params);
     const balls = result.balls;
+
     if (result.params.restitution !== undefined) {
         collisionSystem.restitution = result.params.restitution;
-        state.restitution = result.params.restitution; // sync so syncPhysicsParams doesn't override
+        state.restitution = result.params.restitution;
     }
     if (result.params.N !== undefined) {
         state.N = result.params.N;
     }
 
-    // Create Three.js visuals for each ball
     for (const ball of balls) {
         ball.createMesh(scene);
         ball.createString(scene);
@@ -291,20 +379,22 @@ function setupScenario(scenarioName) {
     state.balls = balls;
     state.ballMeshes = balls.map(b => b.mesh);
 
-    // Rebuild frame to match new ball count / spacing
     rebuildFrame();
-
-    // Reset energy tracking for new scenario
     energyTracker.reset();
+
+    // Record initial mechanical energy for conservation tracking
+    const initial = computeMechanicalEnergy(balls, state.gravity);
+    state._initialEnergy = initial.total;
 }
 
-// Rebuild per-ball UI and frame when N or params change
 function onParamChange() {
     setupScenario(state.scenario);
-    ui.rebuildPerBall();
+    ui && ui.rebuildPerBall();
 }
 
-// --- Energy HUD ---
+// ============================================================
+// 11. Energy HUD
+// ============================================================
 const energyHud = document.createElement('div');
 energyHud.id = 'energy-hud';
 energyHud.style.cssText = `
@@ -312,7 +402,6 @@ energyHud.style.cssText = `
     color: #aaa; font-family: monospace; font-size: 11px;
     background: rgba(0,0,0,0.6); padding: 8px 12px; border-radius: 4px;
     line-height: 1.6; pointer-events: none; user-select: none;
-    -webkit-user-select: none;
 `;
 document.body.appendChild(energyHud);
 
@@ -330,41 +419,27 @@ function updateEnergyHud() {
         `Total: ${total.toFixed(4)} J`;
 }
 
-// --- Initial setup ---
+// ============================================================
+// 12. Initial Setup & UI
+// ============================================================
 setupScenario(state.scenario);
 
-// --- UI panel ---
 const ui = new UIManager(state, {
     onScenarioChange: (value) => {
         state.scenario = value;
-        // Case 3 starts at N=7 — set it once before setupScenario reads state.N
-        // Restore default params for base cases
-        if (value !== 'Case 3 — N=7 chain' && state.N === 7 && state.scenario === 'Case 3 — N=7 chain') {
-            state.N = 5;
-        }
-        // Case 8 sets gap=0.01; any other scenario resets gap to 0
-        if (value === 'Case 8 — Gaps between balls') {
-            state.gap = 0.01;
-        } else {
-            state.gap = 0;
-        }
-        // Case 9 sets e≈0; any other scenario resets to 0.97
-        if (value === 'Case 9 — Fully inelastic (e≈0)') {
-            state.restitution = 0.01;
-        } else {
-            state.restitution = 0.97;
-        }
+        if (value === 'Case 8 — Gaps between balls') state.gap = 0.01;
+        else state.gap = 0;
+        if (value === 'Case 9 — Fully inelastic (e≈0)') state.restitution = 0.01;
+        else state.restitution = 0.97;
         setupScenario(value);
     },
-    onParamChange: () => {
-        onParamChange();
-    },
-    onReset: () => {
-        setupScenario(state.scenario);
-    },
+    onParamChange: () => onParamChange(),
+    onReset: () => setupScenario(state.scenario),
 });
 
-// --- Sync physics params from state to engine ---
+// ============================================================
+// 13. Sync Helpers
+// ============================================================
 function syncPhysicsParams() {
     physics.g = state.gravity;
     physics.b = state.airDrag;
@@ -372,9 +447,6 @@ function syncPhysicsParams() {
     collisionSystem.restitution = state.restitution;
 }
 
-/**
- * Compute total mechanical energy (KE + PE) for all balls
- */
 function computeMechanicalEnergy(balls, g) {
     let ke = 0, pe = 0;
     for (const ball of balls) {
@@ -384,56 +456,60 @@ function computeMechanicalEnergy(balls, g) {
     return { ke, pe, total: ke + pe };
 }
 
-// --- Animation loop ---
+// ============================================================
+// 14. Animation Loop
+// ============================================================
+let lastTime = performance.now();
+let frameCount = 0;
+
 function animate() {
     requestAnimationFrame(animate);
     frameCount++;
 
     const now = performance.now();
-    const deltaTime = Math.min((now - lastTime) / 1000, 0.05); // cap at 50ms
+    const deltaTime = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
 
-    // Run physics (collision system is called internally per substep)
+    updateWASDCamera(deltaTime);
+
     if (state.playing && state.balls.length > 0) {
         syncPhysicsParams();
 
+        // Physics simulation (collision resolution happens per-substep)
         physics.simulate(state.balls, deltaTime);
 
-        // Get energy losses from physics engine + collision system
-        const losses = physics.getFrameEnergyLosses();
+        // String physics: detection + visuals only (no force hacking)
+        stringPhysics.type = state.stringType;
+        stringPhysics.detectTangled(state.balls);
+        stringPhysics.updateStringVisuals(state.balls);
 
-        // Compute current mechanical energy
         const after = computeMechanicalEnergy(state.balls, state.gravity);
+        const mechNow = after.ke + after.pe;
+        const cumDiss = Math.max(0, (state._initialEnergy || 0) - mechNow);
+        const frameDiss = cumDiss - (state._lastCumDiss || 0);
+        state._lastCumDiss = cumDiss;
+        energyTracker.record(after.ke, after.pe, Math.max(0, frameDiss));
 
-        // Record energy state with component breakdown
-        energyTracker.record(after.ke, after.pe, losses.collision, losses.drag, losses.friction);
-
-        // Update visuals to match physics state
         for (const ball of state.balls) {
             ball.updateVisuals();
         }
     }
 
-    // Update HUD every 10 frames to reduce overhead
     if (frameCount % 10 === 0 || frameCount === 1) {
-        try {
-            updateEnergyHud();
-        } catch (e) {
-            console.error('HUD error:', e);
-        }
+        try { updateEnergyHud(); } catch (e) { /* ignore */ }
     }
 
-    // Update controls and render
     controls.update();
     renderer.render(scene, camera);
 }
 
 animate();
 
-// --- Resize ---
+// ============================================================
+// 15. Resize
+// ============================================================
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
-

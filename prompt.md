@@ -1,8 +1,53 @@
-Fix the following issues in the Newton's Cradle simulation to align it with the physics report (v5.pdf):
+# Newton's Cradle — Three.js Implementation Prompt
 
-In energy.js, correct the header comment P_friction = μk·m·|v_tangential|² to P_friction = μk·N_pivot·|v_tangential| to match the actual (correct) implementation in physics.js.
-In main.js, change the default mass from 0.5 to 0.065 (kg) to match report Table 1's typical steel-ball mass, and widen the mass slider range in ui.js (currently 0.1–1.0) to something like 0.01–1.0 so the report's typical value is reachable.
-In main.js, change the default radius from 0.0125 to 0.02 (m) to match report Table 1.
-(Optional, scope decision) Either implement P_internal (Kelvin–Voigt) and P_sound (acoustic radiation) dissipation terms from report §5.1.4–5.1.5 in physics.js/energy.js, or add a code comment noting they are intentionally omitted as second-order effects per the report's own characterization.
-(Optional, scope decision) Either add a Hertzian contact mode (§4.2–4.3, using stiffness H_k from Table 1) as an alternative to the instantaneous-impulse model, or add a comment/README note that the simulation deliberately implements only the instantaneous-impulse approximation.
-Remove or wire up the unused CollisionSystem.energyLost() static method — it currently duplicates logic in resolvePair but is dead code.
+You are building an interactive **Newton's Cradle** simulation using **Three.js**. The existing codebase already has a basic implementation of a Newton's Cradle with balls, strings, physics, collision detection, energy tracking, scenarios, and UI. Your task is to extend and fix the project according to the requirements below.
+
+## Environment Navigation (WASD)
+
+- The user must be able to navigate (move) the camera in the 3D environment using the **W**, **A**, **S**, and **D** keys.
+- Use keyboard event listeners to map these keys to camera movement in the XZ plane (or appropriate 3D space).
+- The camera should move relative to its current viewing direction (i.e., forward/backward/left/right from the camera's perspective).
+
+## Ball Dragging (Mouse Interaction)
+
+- Each ball must be **draggable** with the mouse.
+- The user must be able to move a ball along **all three axes** (X, Y, Z), not just a single axis.
+- Use raycasting to detect which ball the user clicks on, and implement a drag mechanism that translates mouse movement into 3D movement of the ball.
+- Consider using a drag plane or transforming screen coordinates into 3D movement to achieve natural multi-axis dragging.
+
+## Fix Case 5 — Equilibrium Tilt Bug
+
+- **Case 5** currently has a bug: some of the balls are **tilted** (not hanging straight down) when they should be at **equilibrium**.
+- This is physically incorrect — at equilibrium, all balls must hang vertically straight with no tilt.
+- Diagnose and fix the root cause of this tilt. This may involve:
+  - Incorrect initial positions/angles.
+  - Forces or constraints not being properly zeroed at rest.
+  - Physics integration issues that prevent the system from settling correctly.
+
+## String Simulation and Interactions
+
+### String as a Physical Object
+
+- The **string** must be treated as a full physical object, not just a visual line.
+- Simulate:
+  - **String-to-ball collisions** — strings must collide and interact with balls.
+  - **String-to-string collisions** — strings must collide and interact with each other.
+
+### String Types
+
+- There are **three types of strings**, selectable from the user interface:
+  1. **Regular string** — normal physical behavior.
+  2. **Steel string** — stiffer, higher tension, less elasticity.
+  3. **Elastic string** — stretchy, lower tension, more flexibility.
+- Provide a UI control (e.g., dropdown, radio buttons, or segmented control) to switch between string types.
+- The string type selection must affect the physical properties of the strings in the simulation (tension, stiffness, elasticity, etc.).
+
+## String Tangling
+
+- Handle cases where strings become **twisted or tangled**.
+- The simulation should detect and respond to tangled configurations gracefully.
+- Decide on a strategy:
+  - Untangling logic that resolves overlaps.
+  - Visual feedback when tangling occurs.
+  - Or a reset mechanism for tangled strings.
+- Ensure the simulation remains stable and does not break or produce invalid states when strings tangle.

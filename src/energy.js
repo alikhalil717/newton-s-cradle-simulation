@@ -18,27 +18,20 @@
 export class EnergyTracker {
     constructor() {
         this.history = [];
-        this.cumulativeCollisionLoss = 0;
-        this.cumulativeAirDragWork = 0;
-        this.cumulativeFrictionWork = 0;
-        this.maxHistoryLength = 600; // ~10 seconds at 60fps
+        this.cumulativeDissipated = 0;
+        this.maxHistoryLength = 1200; // ~20 seconds at 60fps
     }
 
     /**
-     * Record energy state for current frame
+     * Record energy state for current frame.
+     * Total energy (KE + PE + dissipated) should remain conserved.
      *
      * @param {number} kinetic - Total kinetic energy (J)
      * @param {number} potential - Total potential energy (J)
-     * @param {number} collisionLoss - Energy lost to collisions this frame (J)
-     * @param {number} airDragWork - Work done by air drag this frame (J)
-     * @param {number} frictionWork - Work done by pivot friction this frame (J)
+     * @param {number} dissipated - Energy dissipated this frame (J) — added to cumulative
      */
-    record(kinetic, potential, collisionLoss, airDragWork, frictionWork) {
-        this.cumulativeCollisionLoss += Math.max(0, collisionLoss);
-        this.cumulativeAirDragWork += Math.abs(airDragWork);
-        this.cumulativeFrictionWork += Math.abs(frictionWork);
-
-        const dissipated = this.cumulativeCollisionLoss + this.cumulativeAirDragWork + this.cumulativeFrictionWork;
+    record(kinetic, potential, dissipated) {
+        this.cumulativeDissipated += Math.max(0, dissipated);
 
         const entry = {
             time: this.history.length > 0
@@ -46,7 +39,7 @@ export class EnergyTracker {
                 : 0,
             kinetic,
             potential,
-            dissipated,
+            dissipated: this.cumulativeDissipated,
         };
 
         this.history.push(entry);
@@ -66,8 +59,6 @@ export class EnergyTracker {
     /** Reset all tracking */
     reset() {
         this.history = [];
-        this.cumulativeCollisionLoss = 0;
-        this.cumulativeAirDragWork = 0;
-        this.cumulativeFrictionWork = 0;
+        this.cumulativeDissipated = 0;
     }
 }

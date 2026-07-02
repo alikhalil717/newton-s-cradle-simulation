@@ -22,35 +22,33 @@ export class Ball {
      * @param {number} params.mass - Ball mass (kg)
      * @param {number} params.radius - Ball radius (m)
      * @param {number} params.length - String length (m)
+     * @param {number} params.stringAngle - Angle between the two strings (degrees)
+     * @param {number} params.pivotTilt - Tilt of local gravity direction (radians)
      */
     constructor({ index, pivot, mass = 0.5, radius = 0.0125, length = 0.30, stringAngle = 0, pivotTilt = 0 }) {
         this.index = index;
         this.pivot = pivot.clone();
         this.mass = mass;
         this.radius = radius;
-        this.length = length;           // physical string length (each of the two strings)
-        this.stringAngle = stringAngle; // angle between the two strings (degrees)
-        this.pivotTilt = pivotTilt;     // radians — tilt of local gravity direction (Case 5)
+        this.length = length;
+        this.stringAngle = stringAngle;
+        this.pivotTilt = pivotTilt;
 
         // Two-string derived geometry
-        this.effectiveLength = length;  // effective pendulum length L_eff = L * cos(α/2)
-        this.stringHalfSpread = 0;      // half the top separation d = L * sin(α/2)
+        this.effectiveLength = length;
+        this.stringHalfSpread = 0;
         this.updateEffectiveLength();
 
-        // Cartesian state (relative to pivot — midpoint of the two string anchors)
+        // Cartesian state (relative to pivot)
         this.pos = new THREE.Vector3(0, -this.effectiveLength, 0);
         this.vel = new THREE.Vector3(0, 0, 0);
         this.acc = new THREE.Vector3(0, 0, 0);
-
-        // Accumulated forces this timestep (N)
         this.force = new THREE.Vector3(0, 0, 0);
-
-        // Contact state
         this.inContact = new Set();
 
-        // Three.js visuals (created by createMesh / createString)
+        // Three.js visuals
         this.mesh = null;
-        this.strings = [null, null];               // two Line objects for the two strings
+        this.strings = [null, null];
         this.stringPivots = [new THREE.Vector3(), new THREE.Vector3()];
     }
 

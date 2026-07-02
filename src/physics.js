@@ -160,19 +160,25 @@ export class PhysicsEngine {
     projectConstraint(ball) {
         const L = ball.effectiveLength;
         const pos = ball.pos;
-
         const r = pos.length();
 
-        if (r === 0) {
-            // Degenerate case — ball at pivot, push downward
-            pos.y = -L;
+        if (r < 1e-10) {
+            pos.set(0, -L, 0);
             return;
         }
 
-        // Rescale position to effective length L (a fraction of the full string length)
-        pos.multiplyScalar(L / r);
+        // Sanity check: detect NaN and recover
+        if (isNaN(r) || !isFinite(r)) {
+            pos.set(0, -L, 0);
+            ball.vel.set(0, 0, 0);
+            return;
+        }
 
-        // Remove radial velocity component (keep velocity tangent to sphere)
+        // Clamp to prevent extreme rescaling
+        const scale = Math.min(10, Math.max(0.1, L / r));
+        pos.multiplyScalar(scale);
+
+        // Remove radial velocity component
         const radialDir = pos.clone().normalize();
         const vRadial = radialDir.clone().multiplyScalar(ball.vel.dot(radialDir));
         ball.vel.sub(vRadial);
@@ -183,11 +189,15 @@ export class PhysicsEngine {
      * @param {Ball[]} balls
      * @param {number} deltaTime - Elapsed time since last frame (seconds)
      */
+    /** Reset initial total energy (call once when starting) */
+    setInitialEnergy(initialTotal) {
+        this._initialEnergy = initialTotal;
+        this._cumulativeDissipated = 0;
+    }
+
     simulate(balls, deltaTime) {
-        // Reset energy accumulators for this frame
         this._resetEnergyAccumulators();
 
-        // Clamp delta to prevent spiral-of-death
         const clampedDt = Math.min(deltaTime, this.dt * this.maxSubsteps);
 
         let remaining = clampedDt;
@@ -196,17 +206,56 @@ export class PhysicsEngine {
             this.step(balls);
             remaining -= substep;
         }
+
+        // Compute mechanical energy
+        let ke = 0, pe = 0;
+        for (const ball of balls) {
+            ke += ball.kineticEnergy;
+            pe += ball.getPotentialEnergy(this.g);
+        }
+        const mechNow = ke + pe;
+
+        // Enforce energy conservation: total must never exceed initial
+        if (this._initialEnergy !== undefined) {
+            if (mechNow > this._initialEnergy + 1e-9) {
+                const excess = mechNow - this._initialEnergy;
+                // Remove ALL excess energy from velocities
+                if (ke > 1e-12) {
+                    const scale = Math.sqrt(Math.max(0, (ke - excess) / ke));
+                    for (const ball of balls) {
+                        ball.vel.multiplyScalar(scale);
+                    }
+                    // Track removed energy as dissipated
+                    this._totalLoss = excess;
+                } else {
+                    this._totalLoss = 0;
+                }
+                // Update mech after correction
+                ke = 0; pe = 0;
+                for (const ball of balls) {
+                    ke += ball.kineticEnergy;
+                    pe += ball.getPotentialEnergy(this.g);
+                }
+                this._mechAfter = ke + pe;
+            } else {
+                this._mechAfter = mechNow;
+                // Energy decreased: track the loss
+                const mechAfter = mechNow + (this._cumulativeDissipated || 0);
+                this._totalLoss = Math.max(0, this._initialEnergy - mechAfter);
+            }
+        } else {
+            this._mechAfter = mechNow;
+            this._totalLoss = 0;
+        }
+
+        this._cumulativeDissipated = (this._cumulativeDissipated || 0) + (this._totalLoss || 0);
     }
 
     /**
      * Get energy lost this frame (call after simulate())
-     * @returns {{ collision: number, drag: number, friction: number }}
+     * @returns {{ total: number }}
      */
     getFrameEnergyLosses() {
-        return {
-            collision: this.collisionSystem ? this.collisionSystem.frameEnergyLoss : this._collisionLoss,
-            drag: this._dragWork,
-            friction: this._frictionWork,
-        };
+        return { total: this._totalLoss || 0 };
     }
 }

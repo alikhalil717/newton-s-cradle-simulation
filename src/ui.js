@@ -96,6 +96,12 @@ export class UIManager {
         const controlsFolder = this.gui.addFolder('Controls');
         controlsFolder.add(this.state, 'playing').name('Play / Pause');
         controlsFolder.add(this.callbacks, 'onReset').name('Reset');
+
+        // --- String Settings ---
+        const stringFolder = this.gui.addFolder('String Settings');
+        stringFolder.add(this.state, 'stringType', this.state.stringTypes)
+            .name('String Type')
+            .onChange(this.callbacks.onParamChange);
     }
 
     /** Rebuild the per-ball mass / radius / length controls */
