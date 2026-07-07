@@ -24,18 +24,21 @@ export class EnergyTracker {
 
     /**
      * Record energy state for current frame.
-     * Total energy (KE + PE + dissipated) should remain conserved.
+     * Uses component-based dissipation (collision + drag + friction).
      *
      * @param {number} kinetic - Total kinetic energy (J)
      * @param {number} potential - Total potential energy (J)
-     * @param {number} dissipated - Energy dissipated this frame (J) — added to cumulative
+     * @param {number} collisionLoss - Energy lost to ball-ball collisions
+     * @param {number} airDragWork - Energy lost to air drag
+     * @param {number} frictionWork - Energy lost to pivot friction
      */
-    record(kinetic, potential, dissipated) {
-        this.cumulativeDissipated += Math.max(0, dissipated);
+    record(kinetic, potential, collisionLoss = 0, airDragWork = 0, frictionWork = 0) {
+        const frameDiss = Math.abs(collisionLoss) + Math.abs(airDragWork) + Math.abs(frictionWork);
+        this.cumulativeDissipated += frameDiss;
 
         const entry = {
             time: this.history.length > 0
-                ? this.history[this.history.length - 1].time + 1/60
+                ? this.history[this.history.length - 1].time + 1 / 60
                 : 0,
             kinetic,
             potential,

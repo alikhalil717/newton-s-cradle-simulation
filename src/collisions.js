@@ -67,6 +67,9 @@ export class CollisionSystem {
         const delta = new THREE.Vector3().copy(posB).sub(posA);
         const dist = delta.length();
 
+        // Guard: if balls are at exactly same position or dist is NaN, bail
+        if (dist < 1e-12 || !isFinite(dist)) return;
+
         // Contact threshold: center-to-center distance < sum of radii
         const minDist = a.radius + b.radius;
         const overlap = minDist - dist;
@@ -74,7 +77,7 @@ export class CollisionSystem {
         if (overlap <= 0) return;
 
         // Contact normal (A → B)
-        const normal = delta.clone().normalize();
+        const normal = delta.clone().divideScalar(dist);
 
         // Mark contact
         a.inContact.add(b.index);

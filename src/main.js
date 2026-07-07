@@ -379,6 +379,10 @@ function setupScenario(scenarioName) {
     state.balls = balls;
     state.ballMeshes = balls.map(b => b.mesh);
 
+    // Initialize string physics (Phase 1.3)
+    stringPhysics.type = state.stringType;
+    stringPhysics.initialize(balls);
+
     rebuildFrame();
     energyTracker.reset();
 
@@ -475,20 +479,34 @@ function animate() {
     if (state.playing && state.balls.length > 0) {
         syncPhysicsParams();
 
-        // Physics simulation (collision resolution happens per-substep)
-        physics.simulate(state.balls, deltaTime);
-
-        // String physics: detection + visuals only (no force hacking)
+        // Sync string type to physics and stringPhysics
+        physics.stringType = state.stringType;
         stringPhysics.type = state.stringType;
+
+        // Physics simulation with integrated string physics (Phases 1-4)
+        physics.simulate(state.balls, deltaTime, stringPhysics);
+
+        // Post-step: tangle detection only. Self-twist detection/resolution already
+        // runs once per substep inside physics.step() — calling it again here was
+        // redundant and doubled exposure to twist-resolution corrections per frame.
         stringPhysics.detectTangled(state.balls);
         stringPhysics.updateStringVisuals(state.balls);
 
+        // Defensive: safety-clamp any particle that has drifted implausibly far
+        stringPhysics.sanitizeParticles(state.balls);
+
+        // Update string line geometry from particle positions (Phase 5)
+        stringPhysics.updateVisuals(state.balls);
+
+        // Energy tracking: get per-frame losses from physics engine
+        // Uses component-based dissipation (collision + drag + friction)
+        const losses = physics.getFrameEnergyLosses();
         const after = computeMechanicalEnergy(state.balls, state.gravity);
-        const mechNow = after.ke + after.pe;
-        const cumDiss = Math.max(0, (state._initialEnergy || 0) - mechNow);
-        const frameDiss = cumDiss - (state._lastCumDiss || 0);
-        state._lastCumDiss = cumDiss;
-        energyTracker.record(after.ke, after.pe, Math.max(0, frameDiss));
+        energyTracker.record(after.ke, after.pe,
+            losses.collision || 0,
+            losses.drag || 0,
+            losses.friction || 0
+        );
 
         for (const ball of state.balls) {
             ball.updateVisuals();

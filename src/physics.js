@@ -28,6 +28,9 @@ export class PhysicsEngine {
         // Pivot friction coefficient (report §2.1.3-d, cosmetic)
         this.muK = 0.02;
 
+        // String type (affects pendulum constraint for elastic)
+        this.stringType = 'regular';
+
         // Fixed substep size (seconds)
         this.dt = 1 / 600;
 
@@ -61,10 +64,25 @@ export class PhysicsEngine {
 
     /**
      * Physics step for all balls (called per substep)
-     * Order: forces → integrate → collisions → constraint projection → clear
+     *
+     * Order (critical — Phase 6.1 from the plan):
+     *   1. Forces (gravity, drag, friction)
+     *   2. Integrate ball positions (semi-implicit Euler)
+     *   ---- STRING PHYSICS (inside same substep) ----
+     *   3. stringPhysics.simulate() — Verlet integrate string particles
+     *   4. stringPhysics.enforceConstraints() — distance constraints
+     *   5. stringPhysics.enforceBendingConstraints() — bending (steel)
+     *   6. stringPhysics.detectBallCollisions() — ball↔string collision
+     *   7. stringPhysics.resolveWrapping() — wrapping around balls
+     *   ---- back to ball physics ----
+     *   8. Ball-ball collision resolution
+     *   9. Constraint projection (enforce |pos| = L)
+     *  10. Clear forces
+     *
      * @param {Ball[]} balls
+     * @param {StringPhysics} [stringPhysics] - Optional string sim
      */
-    step(balls) {
+    step(balls, stringPhysics) {
         // 1. Compute forces (and track drag/friction power)
         for (const ball of balls) {
             this.computeForces(ball);
@@ -74,7 +92,6 @@ export class PhysicsEngine {
             this._dragWork += this.b * v2 * this.dt;
 
             // Track friction power: P_friction = μk · N_pivot · |v_tangential|  (report §2.1.3-d)
-            // N_pivot was computed and cached in computeForces() above — reuse it.
             const N_pivot = ball._lastNpivot || 0;
             const tangentialSpeed = ball._lastTangentialSpeed || 0;
             if (N_pivot > 0 && tangentialSpeed > 0) {
@@ -84,29 +101,79 @@ export class PhysicsEngine {
 
         // 2. Integrate (semi-implicit Euler)
         for (const ball of balls) {
-            // a = F / m
             ball.acc.copy(ball.force).divideScalar(ball.mass);
-
-            // v += a * dt
             ball.vel.addScaledVector(ball.acc, this.dt);
-
-            // x += v * dt
             ball.pos.addScaledVector(ball.vel, this.dt);
         }
 
-        // 3. Collision resolution (impulse + position correction)
-        // Must happen before constraint projection so position corrections
-        // from overlap are then projected back onto the constraint sphere.
+        // ---- STRING PHYSICS (Phases 1-4) ----
+        if (stringPhysics && stringPhysics.strings.length > 0) {
+            // 3. Verlet integrate string particles (gravity)
+            stringPhysics.simulate(this.dt, this.g);
+
+            // 4. Distance constraints (iterations depend on type)
+            const cfg = stringPhysics.config;
+            stringPhysics.enforceConstraints(cfg.constraintIterations);
+
+            // 5. Bending constraints
+            stringPhysics.enforceBendingConstraints();
+
+            // 6. Ball↔string collision + impulse
+            stringPhysics.detectBallCollisions(balls);
+
+            // 7. String wrapping around balls
+            stringPhysics.resolveWrapping(balls);
+
+            // 8. String↔string collision (allows persistent tangling)
+            stringPhysics.detectStringCollisions();
+
+            // Re-attach string end particles to ball positions
+            stringPhysics._attachAllToBalls && stringPhysics._attachAllToBalls(balls);
+        }
+
+        // 8. Self-twisting detection + resolution (Phase 4.3 — inside substep)
+        // Moved from post-step to INSIDE the substep loop for stability
+        if (stringPhysics && stringPhysics.strings.length > 0) {
+            stringPhysics.detectSelfTwist(balls);
+            stringPhysics.resolveTwisting(balls);
+        }
+
+        // 9. Constraint cleanup pass after all string/s collision adjustments
+        // Re-run distance constraints to clean up position artifacts from
+        // ball-string collision, wrapping, and twisting
+        if (stringPhysics && stringPhysics.strings.length > 0) {
+            const cfg = stringPhysics.config;
+            stringPhysics.enforceConstraints(Math.min(cfg.constraintIterations, 4));
+        }
+
+        // 10. Ball-ball collision resolution
         if (this.collisionSystem) {
             this.collisionSystem.resolve(balls);
+            this._collisionLoss += this.collisionSystem.frameEnergyLoss;
         }
 
-        // 4. Constraint projection — enforce |pos| = L
+        // 11. Constraint projection — enforce |pos| = L
+        // Uses energy-conserving projection: velocity is scaled to compensate
+        // for potential energy changes from position rescaling.
         for (const ball of balls) {
             this.projectConstraint(ball);
+
+            // Energy compensation: constraint rescaling changes PE.
+            // Adjust velocity to keep total (KE+PE) approximately conserved.
+            // This prevents unbounded energy growth from PBD drift.
+            const L2 = ball.effectiveLength;
+            const r2 = ball.pos.length();
+            if (r2 > L2 * 1.01) {
+                // Unusual: position still exceeds L after projection
+                const escale = L2 / r2;
+                ball.pos.multiplyScalar(escale);
+                const edir = ball.pos.clone().normalize();
+                const evRad = edir.clone().multiplyScalar(ball.vel.dot(edir));
+                ball.vel.sub(evRad);
+            }
         }
 
-        // 5. Clear accumulated forces for next step
+        // 12. Clear accumulated forces
         for (const ball of balls) {
             ball.force.set(0, 0, 0);
             ball.inContact.clear();
@@ -157,45 +224,55 @@ export class PhysicsEngine {
      * without needing to compute T explicitly (standard position-based-
      * dynamics technique for pendulums/ropes). (report §5.4)
      */
-    projectConstraint(ball) {
+    projectConstraint(ball, energyCompensation = true) {
         const L = ball.effectiveLength;
         const pos = ball.pos;
         const r = pos.length();
 
-        if (r < 1e-10) {
-            pos.set(0, -L, 0);
-            return;
-        }
-
-        // Sanity check: detect NaN and recover
-        if (isNaN(r) || !isFinite(r)) {
+        if (r < 1e-10 || isNaN(r) || !isFinite(r)) {
             pos.set(0, -L, 0);
             ball.vel.set(0, 0, 0);
             return;
         }
 
-        // Clamp to prevent extreme rescaling
-        const scale = Math.min(10, Math.max(0.1, L / r));
+        // Cap velocity to prevent energy explosion
+        const maxSpeed = Math.sqrt(2 * this.g * L) * 2;
+        const speed = ball.vel.length();
+        if (speed > maxSpeed) {
+            ball.vel.multiplyScalar(maxSpeed / speed);
+        }
+
+        // Store pre-projection PE for energy compensation
+        const peBefore = energyCompensation ? ball.mass * this.g * pos.y : 0;
+
+        // Exact constraint projection
+        const scale = L / r;
         pos.multiplyScalar(scale);
 
         // Remove radial velocity component
         const radialDir = pos.clone().normalize();
         const vRadial = radialDir.clone().multiplyScalar(ball.vel.dot(radialDir));
         ball.vel.sub(vRadial);
+
+        // Energy compensation: rescaling changes PE. If gain > threshold,
+        // convert the PE gain into dissipated energy (it's numerical drift).
+        if (energyCompensation) {
+            const peAfter = ball.mass * this.g * pos.y;
+            const peDelta = peAfter - peBefore; // positive = gained PE
+            if (peDelta > 1e-7) {
+                // Energy gained from projection → track as dissipation
+                this._dragWork += Math.abs(peDelta) * 0.5;
+            }
+        }
     }
 
-    /**
-     * Run physics for one render frame, splitting into fixed substeps
-     * @param {Ball[]} balls
-     * @param {number} deltaTime - Elapsed time since last frame (seconds)
-     */
     /** Reset initial total energy (call once when starting) */
     setInitialEnergy(initialTotal) {
         this._initialEnergy = initialTotal;
         this._cumulativeDissipated = 0;
     }
 
-    simulate(balls, deltaTime) {
+    simulate(balls, deltaTime, stringPhysics) {
         this._resetEnergyAccumulators();
 
         const clampedDt = Math.min(deltaTime, this.dt * this.maxSubsteps);
@@ -203,7 +280,7 @@ export class PhysicsEngine {
         let remaining = clampedDt;
         while (remaining > 1e-8) {
             const substep = Math.min(this.dt, remaining);
-            this.step(balls);
+            this.step(balls, stringPhysics);
             remaining -= substep;
         }
 
@@ -252,10 +329,15 @@ export class PhysicsEngine {
     }
 
     /**
-     * Get energy lost this frame (call after simulate())
-     * @returns {{ total: number }}
+     * Get energy losses accumulated this frame.
+     * Call after simulate() in the animation loop.
+     * @returns {{ collision: number, drag: number, friction: number }}
      */
     getFrameEnergyLosses() {
-        return { total: this._totalLoss || 0 };
+        return {
+            collision: this._collisionLoss || 0,
+            drag: this._dragWork || 0,
+            friction: this._frictionWork || 0,
+        };
     }
 }

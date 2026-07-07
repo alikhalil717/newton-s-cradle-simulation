@@ -48,7 +48,7 @@ export class Ball {
 
         // Three.js visuals
         this.mesh = null;
-        this.strings = [null, null];
+        this.stringLines = [null, null];  // multi-segment line strips (9 vertices each)
         this.stringPivots = [new THREE.Vector3(), new THREE.Vector3()];
     }
 
@@ -185,43 +185,43 @@ export class Ball {
     }
 
     /**
-     * Create two string lines from the two pivot points to the ball.
-     * When stringAngle = 0 they overlap (single-string behavior).
+     * Create two multi-segment string lines from pivot anchors to ball.
+     * Each string has 8 segments → 9 vertices. Positions are updated
+     * by stringPhysics.updateVisuals() each frame.
      * @param {THREE.Scene} scene
      */
     createString(scene) {
         this.updateStringPivots();
 
-        const wp = this.worldPos;
-        const mat = new THREE.LineBasicMaterial({
-            color: 0x888888,
-            transparent: true,
-            opacity: 0.6,
-        });
-
         for (let i = 0; i < 2; i++) {
-            const pts = [this.stringPivots[i].clone(), wp.clone()];
+            // Create a straight chain of 9 points from pivot to ball
+            const pts = [];
+            const dir = new THREE.Vector3().copy(this.worldPos).sub(this.stringPivots[i]);
+            const len = dir.length();
+            dir.normalize();
+            for (let j = 0; j < 9; j++) {
+                const t = j / 8;
+                const p = new THREE.Vector3().copy(this.stringPivots[i]).addScaledVector(dir, t * len);
+                pts.push(p);
+            }
             const geo = new THREE.BufferGeometry().setFromPoints(pts);
-            this.strings[i] = new THREE.Line(geo, mat.clone());
-            scene.add(this.strings[i]);
+            const mat = new THREE.LineBasicMaterial({
+                color: 0x888888,
+                transparent: true,
+                opacity: 0.6,
+            });
+            this.stringLines[i] = new THREE.Line(geo, mat);
+            scene.add(this.stringLines[i]);
         }
     }
 
     /**
-     * Update mesh position and both string geometries to match current physics state
+     * Update mesh position. String line positions are managed by
+     * stringPhysics.updateVisuals() — this method only updates the ball mesh.
      */
     updateVisuals() {
         if (this.mesh) {
             this.mesh.position.copy(this.worldPos);
-        }
-        const wp = this.worldPos;
-        for (let i = 0; i < 2; i++) {
-            if (this.strings[i]) {
-                const pos = this.strings[i].geometry.attributes.position;
-                pos.setXYZ(0, this.stringPivots[i].x, this.stringPivots[i].y, this.stringPivots[i].z);
-                pos.setXYZ(1, wp.x, wp.y, wp.z);
-                pos.needsUpdate = true;
-            }
         }
     }
 
@@ -234,11 +234,11 @@ export class Ball {
             this.mesh = null;
         }
         for (let i = 0; i < 2; i++) {
-            if (this.strings[i]) {
-                scene.remove(this.strings[i]);
-                this.strings[i].geometry.dispose();
-                this.strings[i].material.dispose();
-                this.strings[i] = null;
+            if (this.stringLines[i]) {
+                scene.remove(this.stringLines[i]);
+                this.stringLines[i].geometry.dispose();
+                this.stringLines[i].material.dispose();
+                this.stringLines[i] = null;
             }
         }
     }
