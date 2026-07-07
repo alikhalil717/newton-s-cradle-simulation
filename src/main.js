@@ -1,9 +1,4 @@
-/**
- * Newton's Cradle — Main entry point
- *
- * Orchestrates the scene, physics, collision, energy tracking,
- * scenarios, UI, and input handling.
- */
+
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Ball } from './ball.js';
@@ -12,15 +7,11 @@ import { CollisionSystem } from './collisions.js';
 import { EnergyTracker } from './energy.js';
 import { ScenarioManager } from './scenarios.js';
 import { UIManager } from './ui.js';
-import { StringPhysics } from './stringPhysics.js';
 import { RoomBuilder } from './room.js';
 
-// ============================================================
-// 1. Scene, Camera, Renderer
-// ============================================================
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a1a);
-// No fog for the room — we want it fully visible
 
 const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.01, 10);
 camera.position.set(1.5, 1.0, 2.2);
@@ -36,9 +27,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
 
-// ============================================================
-// 2. Orbit Controls
-// ============================================================
+
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.15, 0);
 controls.enableDamping = true;
@@ -47,20 +36,15 @@ controls.minDistance = 0.4;
 controls.maxDistance = 2.8;
 controls.update();
 
-// ============================================================
-// 3. Systems
-// ============================================================
+
 const physics = new PhysicsEngine();
 const collisionSystem = new CollisionSystem();
 const energyTracker = new EnergyTracker();
 const scenarioManager = new ScenarioManager();
-const stringPhysics = new StringPhysics();
 
 physics.collisionSystem = collisionSystem;
 
-// ============================================================
-// 4. Global State
-// ============================================================
+
 export const state = {
     scene, camera, renderer, controls,
 
@@ -92,15 +76,11 @@ export const state = {
     stringTypes: ['regular', 'steel', 'elastic'],
 };
 
-// ============================================================
-// 5. Room
-// ============================================================
+
 const roomBuilder = new RoomBuilder(scene);
 roomBuilder.build();
 
-// ============================================================
-// 6. Cradle Frame / Stand
-// ============================================================
+
 const BRASS = { color: 0xc8a050, metalness: 0.8, roughness: 0.25 };
 const STEEL = { color: 0x909090, metalness: 0.7, roughness: 0.3 };
 const DARK = { color: 0x2a2a2a, metalness: 0.6, roughness: 0.4 };
@@ -115,7 +95,7 @@ function buildCradleFrame(barWidth = 0.35, stringHalfSpread = 0) {
     const spread = Math.max(stringHalfSpread, 0.02);
     const halfW = width / 2;
 
-    // Base plate (sits on top of pedestal)
+
     const basePlate = new THREE.Mesh(
         new THREE.BoxGeometry(width + 0.06, 0.012, spread * 2 + 0.06),
         darkMat
@@ -124,7 +104,7 @@ function buildCradleFrame(barWidth = 0.35, stringHalfSpread = 0) {
     basePlate.receiveShadow = true;
     group.add(basePlate);
 
-    // Vertical posts — refined cylindrical look using box with bevel hint
+
     const postGeo = new THREE.CylinderGeometry(0.006, 0.008, 0.78, 8);
     const postPositions = [
         [-halfW, 0.1 + 0.01, -spread], [halfW, 0.1 + 0.01, -spread],
@@ -137,7 +117,7 @@ function buildCradleFrame(barWidth = 0.35, stringHalfSpread = 0) {
         group.add(p);
     }
 
-    // Top beams — two parallel bars (front and back)
+
     const beamGeo = new THREE.BoxGeometry(width, 0.012, 0.008);
     const frontBeam = new THREE.Mesh(beamGeo, barMat);
     frontBeam.position.set(0, 0.5 + 0.01, -spread);
@@ -149,7 +129,7 @@ function buildCradleFrame(barWidth = 0.35, stringHalfSpread = 0) {
     backBeam.castShadow = true;
     group.add(backBeam);
 
-    // Cross connectors at ends
+
     const crossGeo = new THREE.BoxGeometry(0.008, 0.012, spread * 2);
     for (const xSign of [-1, 1]) {
         const cross = new THREE.Mesh(crossGeo, barMat);
@@ -158,7 +138,7 @@ function buildCradleFrame(barWidth = 0.35, stringHalfSpread = 0) {
         group.add(cross);
     }
 
-    // Decorative finials on top of posts
+
     const finialGeo = new THREE.SphereGeometry(0.008, 8, 8);
     for (const pp of postPositions) {
         const fin = new THREE.Mesh(finialGeo, brassMat);
@@ -167,7 +147,7 @@ function buildCradleFrame(barWidth = 0.35, stringHalfSpread = 0) {
         group.add(fin);
     }
 
-    // Small nameplate
+
     const plateMat = new THREE.MeshStandardMaterial({
         color: 0xbba060,
         metalness: 0.7,
@@ -193,10 +173,9 @@ function getStringHalfSpread() {
     return state.length * Math.sin(halfAngleRad);
 }
 
-// Position the frame on top of the pedestal
-const PEDESTAL_TOP_Y = -0.33 + 0.04 + 0.55 + 0.02; // ≈ 0.28
+const PEDESTAL_TOP_Y = -0.33 + 0.04 + 0.55 + 0.02;
 const FRAME_BASE_Y = PEDESTAL_TOP_Y;
-// Y-coordinate for ball pivots in world space (frame beams are at local y=0.5)
+
 const PIVOT_Y = FRAME_BASE_Y + 0.5;
 
 let frame = buildCradleFrame(getFrameWidth(), getStringHalfSpread());
@@ -213,9 +192,7 @@ function rebuildFrame() {
     scene.add(frame);
 }
 
-// ============================================================
-// 8. WASD Camera Movement
-// ============================================================
+
 const keys = { w: false, a: false, s: false, d: false };
 document.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
@@ -249,9 +226,7 @@ function updateWASDCamera(delta) {
     }
 }
 
-// ============================================================
-// 9. Ball Dragging
-// ============================================================
+
 let dragState = null;
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -324,9 +299,7 @@ window.addEventListener('pointerup', () => {
     }
 });
 
-// ============================================================
-// 10. Scenario Setup
-// ============================================================
+
 function setupScenario(scenarioName) {
     for (const ball of state.balls) {
         ball.dispose(scene);
@@ -379,14 +352,10 @@ function setupScenario(scenarioName) {
     state.balls = balls;
     state.ballMeshes = balls.map(b => b.mesh);
 
-    // Initialize string physics (Phase 1.3)
-    stringPhysics.type = state.stringType;
-    stringPhysics.initialize(balls);
-
     rebuildFrame();
     energyTracker.reset();
 
-    // Record initial mechanical energy for conservation tracking
+
     const initial = computeMechanicalEnergy(balls, state.gravity);
     state._initialEnergy = initial.total;
 }
@@ -396,9 +365,7 @@ function onParamChange() {
     ui && ui.rebuildPerBall();
 }
 
-// ============================================================
-// 11. Energy HUD
-// ============================================================
+
 const energyHud = document.createElement('div');
 energyHud.id = 'energy-hud';
 energyHud.style.cssText = `
@@ -423,9 +390,7 @@ function updateEnergyHud() {
         `Total: ${total.toFixed(4)} J`;
 }
 
-// ============================================================
-// 12. Initial Setup & UI
-// ============================================================
+
 setupScenario(state.scenario);
 
 const ui = new UIManager(state, {
@@ -441,9 +406,7 @@ const ui = new UIManager(state, {
     onReset: () => setupScenario(state.scenario),
 });
 
-// ============================================================
-// 13. Sync Helpers
-// ============================================================
+
 function syncPhysicsParams() {
     physics.g = state.gravity;
     physics.b = state.airDrag;
@@ -460,9 +423,7 @@ function computeMechanicalEnergy(balls, g) {
     return { ke, pe, total: ke + pe };
 }
 
-// ============================================================
-// 14. Animation Loop
-// ============================================================
+
 let lastTime = performance.now();
 let frameCount = 0;
 
@@ -479,27 +440,18 @@ function animate() {
     if (state.playing && state.balls.length > 0) {
         syncPhysicsParams();
 
-        // Sync string type to physics and stringPhysics
+
         physics.stringType = state.stringType;
-        stringPhysics.type = state.stringType;
 
-        // Physics simulation with integrated string physics (Phases 1-4)
-        physics.simulate(state.balls, deltaTime, stringPhysics);
+        physics.simulate(state.balls, deltaTime);
 
-        // Post-step: tangle detection only. Self-twist detection/resolution already
-        // runs once per substep inside physics.step() — calling it again here was
-        // redundant and doubled exposure to twist-resolution corrections per frame.
-        stringPhysics.detectTangled(state.balls);
-        stringPhysics.updateStringVisuals(state.balls);
 
-        // Defensive: safety-clamp any particle that has drifted implausibly far
-        stringPhysics.sanitizeParticles(state.balls);
+        for (const ball of state.balls) {
+            ball.updateStringPivots();
+            ball.updateVisuals();
+        }
 
-        // Update string line geometry from particle positions (Phase 5)
-        stringPhysics.updateVisuals(state.balls);
 
-        // Energy tracking: get per-frame losses from physics engine
-        // Uses component-based dissipation (collision + drag + friction)
         const losses = physics.getFrameEnergyLosses();
         const after = computeMechanicalEnergy(state.balls, state.gravity);
         energyTracker.record(after.ke, after.pe,
@@ -523,9 +475,7 @@ function animate() {
 
 animate();
 
-// ============================================================
-// 15. Resize
-// ============================================================
+
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();

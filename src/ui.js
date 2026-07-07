@@ -1,25 +1,13 @@
-/**
- * UI control panel — lil-gui wiring
- *
- * Exposes all parameters from report Table 1 as live-adjustable controls,
- * plus scenario presets, play/pause/reset, per-ball editing, and two-string angle.
- */
-
 import GUI from 'lil-gui';
 
 export class UIManager {
-    /** Prevent duplicate GUIs across HMR reloads */
     static _existingGUI = null;
 
-    /**
-     * @param {Object} state - Shared mutable state object
-     * @param {Object} callbacks
-     */
     constructor(state, callbacks) {
         this.state = state;
         this.callbacks = callbacks;
 
-        // Destroy any previous GUI (prevents duplicates from HMR)
+
         if (UIManager._existingGUI) {
             UIManager._existingGUI.destroy();
         }
@@ -35,7 +23,7 @@ export class UIManager {
     }
 
     build() {
-        // --- Scenario selection ---
+
         this.scenarioFolder = this.gui.addFolder('Scenario');
         this.scenarioFolder.add(this.state, 'scenario', this.state.scenarioNames)
             .name('Preset')
@@ -49,7 +37,7 @@ export class UIManager {
             .name('Ball count')
             .onChange(this.callbacks.onParamChange);
 
-        // --- Physics parameters (Table 1) ---
+
         this.paramsFolder = this.gui.addFolder('Physics Parameters');
 
         this.paramsFolder.add(this.state, 'mass', 0.01, 1.0, 0.001)
@@ -88,29 +76,25 @@ export class UIManager {
             .name('Pivot friction')
             .onChange(this.callbacks.onParamChange);
 
-        // --- Per-ball controls (rebuilt each time N changes) ---
+
         this.perBallFolder = this.gui.addFolder('Per-Ball Settings');
         this._rebuildPerBallControls();
 
-        // --- Controls ---
+
         const controlsFolder = this.gui.addFolder('Controls');
         controlsFolder.add(this.state, 'playing').name('Play / Pause');
         controlsFolder.add(this.callbacks, 'onReset').name('Reset');
 
-        // --- String Settings ---
+
         const stringFolder = this.gui.addFolder('String Settings');
         stringFolder.add(this.state, 'stringType', this.state.stringTypes)
             .name('String Type')
             .onChange(this.callbacks.onParamChange);
     }
 
-    /** Rebuild the per-ball mass / radius / length controls */
     _rebuildPerBallControls() {
         this._perBallControllers = [];
-
         const N = this.state.N;
-        // Preserve per-ball values (don't overwrite with defaults)
-        // Arrays are already sized correctly by setupScenario in main.js
 
         for (let i = 0; i < N; i++) {
             const ballObj = {
@@ -136,14 +120,9 @@ export class UIManager {
         }
     }
 
-    /** Rebuild per-ball controls (call when N changes) */
     rebuildPerBall() {
-        // Mark all old controllers as stale (they'll be garbage-collected
-        // when the user opens a new folder). lil-gui doesn't support
-        // folder removal, so we just destroy the sub-controllers.
         const folderDom = this.perBallFolder.domElement;
-        folderDom.style.display = 'none'; // hide old folder
-        // Create a new folder with same title
+        folderDom.style.display = 'none';
         this.perBallFolder = this.gui.addFolder('Per-Ball Settings');
         this._perBallControllers = [];
         this._rebuildPerBallControls();
